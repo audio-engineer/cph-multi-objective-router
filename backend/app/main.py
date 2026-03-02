@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 import geopandas as gpd
-import networkx as nx
+import networkx as  nx
 import numpy as np
 import osmnx as ox
 import requests
@@ -30,10 +30,16 @@ from starlette.middleware.cors import CORSMiddleware
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    from shapely.coords import CoordinateSequence
 
-GRAPH_BIKE: nx.MultiDiGraph[Any] | None = None  # pylint: disable=unsubscriptable-object
+    type MultiDiGraphAny = nx.MultiDiGraph[Any]
+else:
+    MultiDiGraphAny = nx.MultiDiGraph
+
+
+GRAPH_BIKE: MultiDiGraphAny | None = None
 EDGES_BIKE: gpd.GeoDataFrame | None = None
-GRAPH_WALK: nx.MultiDiGraph[Any] | None = None  # pylint: disable=unsubscriptable-object
+GRAPH_WALK: MultiDiGraphAny | None = None
 EDGES_WALK: gpd.GeoDataFrame | None = None
 BOUNDARY: ShapelyMultiPolygon | None = None
 
@@ -81,7 +87,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ox.settings.nominatim_url = "http://localhost:8080/"
+# ox.settings.nominatim_url = "http://localhost:8080/" # noqa: ERA001
 
 TravelMode = Literal["bike", "walk"]
 Attribute = Literal["snow", "scenic", "uphill"]
@@ -175,6 +181,7 @@ class LayerProperties(BaseModel):
     value: float
 
 
+# pylint: disable-next=too-few-public-methods
 class LayerFeature(PydanticFeature[PydanticLineString, LayerProperties]):
     """Layer feature."""
 
@@ -182,6 +189,7 @@ class LayerFeature(PydanticFeature[PydanticLineString, LayerProperties]):
     properties: LayerProperties
 
 
+# pylint: disable-next=too-few-public-methods
 class LayerFeatureCollection(PydanticFeatureCollection[LayerFeature]):
     """FeatureCollection with metadata."""
 
@@ -203,12 +211,12 @@ class Step:
 
 
 def edge_linestring(
-    graph: nx.MultiDiGraph[Any], u: int, v: int, data: dict[str, Any]
+    graph: MultiDiGraphAny, u: int, v: int, data: dict[str, Any]
 ) -> ShapelyLineString:
     """Return the linestring of the edge."""
     geometry = data.get("geometry")
 
-    if geometry is not None:
+    if isinstance(geometry, ShapelyLineString):
         return geometry
 
     # OSMnx node x=lon, y=lat
@@ -234,14 +242,62 @@ def load_overlay_polygons(path: str) -> tuple[list[ShapelyPolygon], list[float]]
 
         raise ValueError(value_error)
 
-    polygons = gdf.geometry.to_list()
-    values = gdf["value"].to_list()
+    polygons: list[ShapelyPolygon] = []
+    values: list[float] = []
+
+    for geom, raw_value in zip(
+        gdf.geometry.to_list(), gdf["value"].to_list(), strict=True
+    ):
+        value = float(raw_value)
+
+        if isinstance(geom, ShapelyPolygon):
+            polygons.append(geom)
+            values.append(value)
+
+            continue
+
+        if isinstance(geom, ShapelyMultiPolygon):
+            for poly in geom.geoms:
+                polygons.append(poly)
+                values.append(value)
+
+            continue
+
+        type_error = f"{path} contains non-polygon geometry: {type(geom)}"
+
+        raise TypeError(type_error)
 
     return polygons, values
 
 
+def _hit_values_for_point(
+    midpoint: ShapelyPoint,
+    candidates: np.ndarray,
+    polygons: list[ShapelyPolygon],
+    polygon_to_value: dict[int, float],
+) -> list[float]:
+    """Compute overlay hit values for a midpoint.
+
+    Shapely's STRtree.query returns either indices (common in Shapely 2) or
+    geometries depending on the configuration/version.
+    """
+    hit_vals: list[float] = []
+
+    if len(candidates) == 0:
+        return hit_vals
+
+    if isinstance(candidates[0], (np.integer, int)):
+        for idx in candidates:
+            polygon = polygons[int(idx)]
+
+            if polygon.covers(midpoint):
+                hit_vals.append(polygon_to_value[id(polygon)])
+
+    return hit_vals
+
+
 def apply_overlay(
-    graph: nx.MultiDiGraph[Any],
+    graph: MultiDiGraphAny,
     attribute: str,
     polygons: list[ShapelyPolygon],
     values: list[float],
@@ -249,7 +305,9 @@ def apply_overlay(
 ) -> None:
     """Apply an overlay to the graph."""
     tree = STRtree(polygons)
-    polygon_to_value = {id(polygon): value for polygon, value in zip(polygons, values)}
+    polygon_to_value = {
+        id(polygon): value for polygon, value in zip(polygons, values, strict=True)
+    }
 
     for u, v, _, data in graph.edges(keys=True, data=True):
         line_string = edge_linestring(graph, u, v, data)
@@ -260,15 +318,9 @@ def apply_overlay(
         if len(candidates) == 0:
             continue
 
-        hit_vals = []
-
-        if isinstance(candidates[0], (np.integer, int)):
-            for idx in candidates:
-                i = int(idx)
-                polygon = polygons[i]
-
-                if polygon.covers(midpoint):
-                    hit_vals.append(polygon_to_value[id(polygon)])
+        hit_vals = _hit_values_for_point(
+            midpoint, candidates, polygons, polygon_to_value
+        )
 
         if not hit_vals:
             continue
@@ -277,7 +329,7 @@ def apply_overlay(
         data[attribute] = float(new_val)
 
 
-def initialize_edge_attributes(graph: nx.MultiDiGraph[Any]) -> None:
+def initialize_edge_attributes(graph: MultiDiGraphAny) -> None:
     """Initialize edge attributes.
 
     Iterates over all edges in the graph and ensures that each edge's attribute
@@ -288,7 +340,7 @@ def initialize_edge_attributes(graph: nx.MultiDiGraph[Any]) -> None:
             data.setdefault(attribute, 0.0)
 
 
-def apply_all_overlays(graph: nx.MultiDiGraph[Any], overlay_dir: str) -> None:
+def apply_all_overlays(graph: MultiDiGraphAny, overlay_dir: str) -> None:
     """Apply all overlays to the graph."""
     initialize_edge_attributes(graph)
 
@@ -298,7 +350,7 @@ def apply_all_overlays(graph: nx.MultiDiGraph[Any], overlay_dir: str) -> None:
         apply_overlay(graph, attribute, polygons, values, combine="max")
 
 
-def build_edges_gdf(graph: nx.MultiDiGraph[Any]) -> gpd.GeoDataFrame:
+def build_edges_gdf(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
     """Build a GeoDataFrame with edges."""
     # fill_edge_geometry=True ensures we always have LineString geometry
     gdf = ox.graph_to_gdfs(graph, nodes=False, edges=True, fill_edge_geometry=True)
@@ -495,20 +547,15 @@ def build_feature_collection(
     )
 
 
-@app.get("/layer", response_model=LayerFeatureCollection)
-def layer(
+def _filter_edges_view(
+    gdf: gpd.GeoDataFrame,
+    *,
+    bbox: str | None,
     attribute: Attribute,
-    mode: TravelMode,
-    bbox: str | None = None,
-    min_value: float = 0.01,
-    limit: int = 20000,
-) -> LayerFeatureCollection:
-    """Get a layer of the graph."""
-    gdf = EDGES_BIKE if mode == "bike" else EDGES_WALK
-
-    if gdf is None:
-        raise HTTPException(status_code=500, detail="Edge index not loaded.")
-
+    min_value: float,
+    limit: int,
+) -> gpd.GeoDataFrame:
+    """Apply bbox/value/limit filtering to the edge GeoDataFrame."""
     view = gdf
 
     if bbox is not None:
@@ -527,7 +574,14 @@ def layer(
     if len(view) > limit:
         view = view.head(limit)
 
-    features = []
+    return view
+
+
+def _layer_features_from_view(
+    view: gpd.GeoDataFrame, attribute: Attribute
+) -> list[LayerFeature]:
+    """Build layer features from a filtered edge view."""
+    features: list[LayerFeature] = []
 
     for row in view.itertuples():
         geometry = row.geometry
@@ -535,12 +589,15 @@ def layer(
         if geometry is None:
             continue
 
-        coordinates = geometry.coords if hasattr(geometry, "coords") else None
-
-        if not coordinates:
+        if not isinstance(geometry, ShapelyLineString):
             continue
 
-        coordinates = [Position2D(float(x), float(y)) for x, y in coordinates]
+        coords: CoordinateSequence = geometry.coords
+
+        if not coords:
+            continue
+
+        coordinates = [Position2D(float(x), float(y)) for x, y in coords]
 
         value = float(getattr(row, attribute))
 
@@ -557,6 +614,33 @@ def layer(
                 ),
             )
         )
+
+    return features
+
+
+@app.get("/layer", response_model=LayerFeatureCollection)
+def layer(
+    attribute: Attribute,
+    mode: TravelMode,
+    bbox: str | None = None,
+    min_value: float = 0.01,
+    limit: int = 20000,
+) -> LayerFeatureCollection:
+    """Get a layer of the graph."""
+    gdf = EDGES_BIKE if mode == "bike" else EDGES_WALK
+
+    if gdf is None:
+        raise HTTPException(status_code=500, detail="Edge index not loaded.")
+
+    view = _filter_edges_view(
+        gdf,
+        bbox=bbox,
+        attribute=attribute,
+        min_value=min_value,
+        limit=limit,
+    )
+
+    features = _layer_features_from_view(view, attribute)
 
     return LayerFeatureCollection(type="FeatureCollection", features=features)
 
@@ -617,7 +701,7 @@ def reverse_geocode(lon: float, lat: float, zoom: int = 18) -> ReverseGeocodeRes
     """Get the nearest address for the given coordinates."""
     url = ox.settings.nominatim_url.rstrip("/") + "/reverse"
 
-    params = {
+    params: dict[str, str | int | float] = {
         "format": "jsonv2",
         "lat": lat,
         "lon": lon,
