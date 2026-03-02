@@ -1,0 +1,9 @@
+"""Export OpenAPI specification."""
+
+import json
+from pathlib import Path
+
+from app.main import app
+
+with Path("openapi.json").open("w") as file:
+    json.dump(app.openapi(), file, indent=2)

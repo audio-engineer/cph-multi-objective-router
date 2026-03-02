@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Black">
+    <option name="enabledOnReformat" value="true" />
+    <option name="sdkName" value="uv (backend) (2)" />
+  </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="uv (backend) (2)" project-jdk-type="Python SDK" />
+  <component name="RuffConfiguration">
+    <option name="enabled" value="true" />
+  </component>
+  <component name="TyConfiguration">
+    <option name="enabled" value="true" />
+  </component>
+</project>

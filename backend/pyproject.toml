@@ -1,0 +1,53 @@
+[project]
+name = "cph-multi-objective-router"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Martin Kedmenec", email = "70742985+audio-engineer@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]>=0.128.7",
+    "geojson>=3.2.0",
+    "geojson-pydantic>=2.1.0",
+    "geopandas>=1.1.2",
+    "osmnx[all]>=2.0.7",
+]
+
+[dependency-groups]
+dev = [
+    "black[jupyter]>=26.1.0",
+    "flake8>=7.3.0",
+    "isort>=7.0.0",
+    "jupyterlab>=4.5.4",
+    "mypy>=1.19.1",
+    "pylint>=4.0.4",
+    "ruff>=0.15.0",
+    "ty>=0.0.16",
+    "types-geopandas>=1.1.2.20260120",
+    "types-networkx>=3.6.1.20260210",
+    "types-requests>=2.32.4.20260107",
+    "types-shapely>=2.1.0.20250917",
+]
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+files = "**/*.py"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "geojson"
+ignore_missing_imports = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["COM812", "COM819", "TRY401", "I001"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["S101"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

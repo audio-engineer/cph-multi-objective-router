@@ -1,0 +1,40 @@
+### GET map boundary
+GET http://localhost:8000/boundary
+
+### GET
+GET http://localhost:8000/layer?attribute=snow&mode=walk
+
+### POST
+POST http://localhost:8000/route
+Content-Type: application/json
+
+{
+  "travel_mode": "bike",
+  "from": "Nørrebro",
+  "to": "Bispebjerg"
+}
+
+### POST
+POST http://localhost:8000/route/coords
+Content-Type: application/json
+
+{
+  "travel_mode": "walk",
+  "start": {
+    "type": "Point",
+    "coordinates": [
+      12.538235,
+      55.700772
+    ]
+  },
+  "end": {
+    "type": "Point",
+    "coordinates": [
+      12.513641,
+      55.663993
+    ]
+  }
+}
+
+### GET
+GET http://localhost:8000/reverse?lon=12.538235&lat=55.700772
