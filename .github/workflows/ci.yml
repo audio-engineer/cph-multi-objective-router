@@ -26,14 +26,16 @@ jobs:
         run: uv run isort -c --diff .
       - name: Run Black
         run: uv run black --check --diff .
-      - name: Run ruff
+      - name: Run Ruff
         run: uv run ruff check
-      - name: Run Mypy
+      - name: Run ty
+        run: uv run ty check
+      - name: Run mypy
         run: uv run mypy
       - name: Run Pylint
         run: uv run pylint app notebooks export_openapi.py
-      - name: Run ty
-        run: uv run ty check
+      - name: Run Flake8
+        run: uv run flake8 .
   frontend:
     name: Frontend CI
     runs-on: ubuntu-latest
@@ -43,6 +45,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Test
+        run: ls -al
       - name: Set Up pnpm
         uses: pnpm/action-setup@v4
         with:
