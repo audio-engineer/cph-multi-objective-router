@@ -1,0 +1,61 @@
+name: CI
+on: push
+#permissions:
+#  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    name: Backend CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          working-directory: backend
+          enable-cache: true
+      - name: Install Dependencies
+        run: uv sync --frozen --all-extras
+      - name: Run isort
+        run: uv run isort -c --diff .
+      - name: Run Black
+        run: uv run black --check --diff .
+      - name: Run ruff
+        run: uv run ruff check
+      - name: Run Mypy
+        run: uv run mypy
+      - name: Run Pylint
+        run: uv run pylint app notebooks export_openapi.py
+      - name: Run ty
+        run: uv run ty check
+  frontend:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set Up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Set Up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run Prettier
+        run: pnpm exec format:check
+      - name: Run ESLint
+        run: pnpm exec lint
