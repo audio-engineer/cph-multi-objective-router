@@ -11,3 +11,4 @@ wheels/
 
 # Added by the developer
 openapi.json
+.coverage
