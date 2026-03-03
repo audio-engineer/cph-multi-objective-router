@@ -14,6 +14,7 @@ client.setConfig({
   baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000",
 });
 
+// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <MantineProvider>

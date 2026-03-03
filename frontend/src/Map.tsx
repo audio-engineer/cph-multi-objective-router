@@ -172,10 +172,12 @@ export const Map = ({
           onEndDragEnd={onEndDragged}
         />
         {/*<RouteLayer data={geoJson} />*/}
-        <SelectedSegment
-          lineString={route?.features[0].geometry!}
-          step={selectedStep}
-        />
+        {route && (
+          <SelectedSegment
+            lineString={route.features[0].geometry}
+            step={selectedStep}
+          />
+        )}
         <LayersControl position="bottomright">
           <LayersControl.Overlay checked name="Route">
             <LayerGroup>

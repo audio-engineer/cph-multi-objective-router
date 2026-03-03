@@ -13,7 +13,7 @@ import pluginQuery from "@tanstack/eslint-plugin-query";
 
 export default defineConfig([
   globalIgnores(["dist", "src/client"]),
-  ...mantine,
+  mantine,
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
