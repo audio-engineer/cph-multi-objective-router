@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 import geopandas as gpd
-import networkx as  nx
+import networkx as nx
 import numpy as np
 import osmnx as ox
 import requests
