@@ -28,7 +28,7 @@ from shapely.geometry import mapping
 from starlette.middleware.cors import CORSMiddleware
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from collections.abc import AsyncGenerator, Callable
 
     from shapely.coords import CoordinateSequence
 
@@ -91,6 +91,26 @@ app.add_middleware(
 
 TravelMode = Literal["bike", "walk"]
 Attribute = Literal["snow", "scenic", "uphill"]
+RouteMethod = Literal["weighted", "pareto"]
+
+
+class ObjectiveWeights(BaseModel):
+    """Objective weights."""
+
+    scenic: int = Field(0, ge=0, le=100)
+    avoid_snow: int = Field(0, ge=0, le=100)
+    avoid_uphill: int = Field(0, ge=0, le=100)
+
+
+class RouteOptions(BaseModel):
+    """Route options."""
+
+    method: RouteMethod = Field(default="weighted", alias="route_method")
+    weights: ObjectiveWeights = Field(default_factory=ObjectiveWeights)
+
+    pareto_max_routes: int = Field(8, ge=1, le=25)
+    pareto_max_labels_per_node: int = Field(40, ge=5, le=200)
+    pareto_max_total_labels: int = Field(50_000, ge=1_000, le=500_000)
 
 
 class RouteRequestCoordinate(BaseModel):
@@ -99,6 +119,7 @@ class RouteRequestCoordinate(BaseModel):
     travel_mode: TravelMode
     start: PydanticPoint
     end: PydanticPoint
+    options: RouteOptions = Field(default_factory=RouteOptions)
 
 
 class RouteRequest(BaseModel):
@@ -107,6 +128,7 @@ class RouteRequest(BaseModel):
     travel_mode: TravelMode
     from_: str = Field(alias="from")
     to: str
+    options: RouteOptions = Field(default_factory=RouteOptions)
 
 
 class StepResponse(BaseModel):
@@ -208,6 +230,107 @@ class Step:
     distance: float
     segment_index_from: int
     segment_index_to: int
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedWeights:
+    """Normalized objective weights."""
+
+    scenic: float
+    avoid_snow: float
+    avoid_uphill: float
+
+
+def normalize_weights(weights: ObjectiveWeights) -> NormalizedWeights:
+    """Normalize objective weights."""
+    return NormalizedWeights(
+        scenic=weights.scenic / 100.0,
+        avoid_snow=weights.avoid_snow / 100.0,
+        avoid_uphill=weights.avoid_uphill / 100.0,
+    )
+
+
+def edge_objective_costs(
+    edge_data: dict[str, Any],
+) -> tuple[float, float, float, float]:
+    """Return (dist, snow_cost, uphill_cost, scenic_penalty). All >= 0."""
+    length = float(edge_data.get("length", 0.0))
+
+    snow = float(edge_data.get("snow", 0.0))
+    uphill = float(edge_data.get("uphill", 0.0))
+    scenic = float(edge_data.get("scenic", 0.0))
+
+    snow_cost = length * snow
+    uphill_cost = length * uphill
+    scenic_penalty = length * (1.0 - scenic)
+
+    return length, snow_cost, uphill_cost, scenic_penalty
+
+
+def scalar_edge_cost(edge_data: dict[str, Any], w: NormalizedWeights) -> float:
+    """Return the scalar edge cost."""
+    dist, snow_cost, uphill_cost, scenic_penalty = edge_objective_costs(edge_data)
+
+    return (
+        dist
+        + w.avoid_snow * snow_cost
+        + w.avoid_uphill * uphill_cost
+        + w.scenic * scenic_penalty
+    )
+
+
+def nx_weight_function(weights: NormalizedWeights) -> Callable[[int, int, Any], float]:
+    """Weight function compatible with MultiDiGraph."""
+
+    def w(u: int, v: int, data: Any) -> float:  # noqa: ARG001
+        if isinstance(data, dict) and "length" in data:
+            return scalar_edge_cost(data, weights)
+
+        if isinstance(data, dict):  # parallel edges
+            best = 1e18
+
+            for edge_data in data.values():
+                best = min(best, scalar_edge_cost(edge_data, weights))
+
+            return best
+
+        return 1e18
+
+    return w
+
+
+def compute_weighted_path(
+    graph: MultiDiGraphAny,
+    origin: int,
+    destination: int,
+    weights: ObjectiveWeights,
+) -> list[int]:
+    """Compute a weighted path between origin and destination."""
+    normalized_weights = normalize_weights(weights)
+
+    return nx.shortest_path(
+        graph,
+        source=origin,
+        target=destination,
+        weight=nx_weight_function(normalized_weights),
+    )
+
+
+def best_parallel_edge_by_scalar(
+    graph: MultiDiGraphAny,
+    u: int,
+    v: int,
+    weights: ObjectiveWeights,
+) -> dict[str, Any]:
+    """Return the best parallel edge by scalar cost."""
+    edges = graph.get_edge_data(u, v)
+
+    if not edges:
+        return {}
+
+    normalized_weights = normalize_weights(weights)
+
+    return min(edges.values(), key=lambda d: scalar_edge_cost(d, normalized_weights))
 
 
 def edge_linestring(
@@ -354,6 +477,7 @@ def build_edges_gdf(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
     """Build a GeoDataFrame with edges."""
     # fill_edge_geometry=True ensures we always have LineString geometry
     gdf = ox.graph_to_gdfs(graph, nodes=False, edges=True, fill_edge_geometry=True)
+
     # Ensure CRS is set for bbox filtering
     gdf.set_crs("EPSG:4326", allow_override=True)
 
@@ -393,8 +517,7 @@ def _as_str_name(value: str | list[Any] | None) -> str | None:
     return str(value)
 
 
-# pylint: disable-next=unsubscriptable-object
-def build_route_steps(graph: nx.MultiDiGraph[Any], path: list[int]) -> list[Step]:
+def build_route_steps(graph: MultiDiGraphAny, path: list[int]) -> list[Step]:
     """Build a step list.
 
     The step list includes all path segments along with street name, length, and
@@ -460,6 +583,50 @@ def build_route_steps(graph: nx.MultiDiGraph[Any], path: list[int]) -> list[Step
     return steps
 
 
+def build_route_steps_weighted(
+    graph: MultiDiGraphAny, path: list[int], weights: ObjectiveWeights
+) -> list[Step]:
+    """Build a step list for weighted paths."""
+    steps: list[Step] = []
+    current_name: str | None = None
+    current_dist = 0.0
+    current_from = 0
+    current_to = 1
+
+    for index, (u, v) in enumerate(pairwise(path)):
+        data = best_parallel_edge_by_scalar(graph, u, v, weights)
+
+        if not data:
+            continue
+
+        dist = float(data.get("length", 0.0))
+        name = _as_str_name(data.get("name")) or _as_str_name(data.get("ref"))
+
+        if not name:
+            highway = _as_str_name(data.get("highway"))
+            name = f"{highway} (unnamed)" if highway else "Unnamed road"
+
+        if current_name is None:
+            current_name = name
+            current_dist = dist
+            current_from = index
+            current_to = index + 1
+        elif name == current_name:
+            current_dist += dist
+            current_to = index + 1
+        else:
+            steps.append(Step(current_name, current_dist, current_from, current_to))
+            current_name = name
+            current_dist = dist
+            current_from = index
+            current_to = index + 1
+
+    if current_name is not None:
+        steps.append(Step(current_name, current_dist, current_from, current_to))
+
+    return steps
+
+
 def ensure_inside_boundary(lon: float, lat: float) -> None:
     """Raise an exception if the given point is outside the boundary."""
     if BOUNDARY is None:
@@ -470,7 +637,12 @@ def ensure_inside_boundary(lon: float, lat: float) -> None:
 
 
 def build_feature_collection(
-    lon_from: float, lat_from: float, lon_to: float, lat_to: float, mode: TravelMode
+    lon_from: float,
+    lat_from: float,
+    lon_to: float,
+    lat_to: float,
+    mode: TravelMode,
+    options: RouteOptions,
 ) -> RouteFeatureCollection:
     """Build a FeatureCollection with the route geometry."""
     graph = GRAPH_BIKE if mode == "bike" else GRAPH_WALK
@@ -490,9 +662,14 @@ def build_feature_collection(
         ) from exception
 
     try:
-        path = nx.shortest_path(
-            graph, source=origin, target=destination, weight="length"
-        )
+        if options.method == "weighted":
+            path = compute_weighted_path(graph, origin, destination, options.weights)
+        elif options.method == "pareto":
+            path = []
+        else:
+            path = nx.shortest_path(
+                graph, source=origin, target=destination, weight="length"
+            )
     except nx.exception.NetworkXNoPath:
         raise HTTPException(status_code=500, detail="No path found.") from None
     except Exception as exception:
@@ -500,7 +677,12 @@ def build_feature_collection(
             status_code=500, detail=f"Path calculation failed: {exception}"
         ) from exception
 
-    steps = build_route_steps(graph, path)
+    if options.method == "weighted":
+        steps = build_route_steps_weighted(graph, path, options.weights)
+    elif options.method == "pareto":
+        steps = []
+    else:
+        steps = build_route_steps(graph, path)
 
     coordinates: list[Position2D | Position3D] = [
         Position2D(graph.nodes[node]["x"], graph.nodes[node]["y"]) for node in path
@@ -681,7 +863,7 @@ def route(request: RouteRequest) -> RouteFeatureCollection:
         ) from exception
 
     return build_feature_collection(
-        lon_from, lat_from, lon_to, lat_to, request.travel_mode
+        lon_from, lat_from, lon_to, lat_to, request.travel_mode, request.options
     )
 
 
@@ -692,7 +874,7 @@ def route_coordinates(request: RouteRequestCoordinate) -> RouteFeatureCollection
     lon_to, lat_to = request.end.coordinates[:2]
 
     return build_feature_collection(
-        lon_from, lat_from, lon_to, lat_to, request.travel_mode
+        lon_from, lat_from, lon_to, lat_to, request.travel_mode, request.options
     )
 
 
