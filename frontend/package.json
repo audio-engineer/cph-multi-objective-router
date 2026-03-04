@@ -29,14 +29,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
-    "@hey-api/openapi-ts": "0.92.4",
+    "@hey-api/openapi-ts": "0.93.1",
     "@tanstack/eslint-plugin-query": "^5.91.4",
     "@types/geojson": "^7946.0.16",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^24.11.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react-swc": "^4.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^9.39.3",
     "eslint-config-mantine": "^4.0.3",
     "eslint-config-prettier": "^10.1.8",
@@ -52,5 +53,5 @@
     "typescript-eslint": "^8.56.1",
     "vite": "^7.3.1"
   },
-  "packageManager": "pnpm@10.30.1+sha512.3590e550d5384caa39bd5c7c739f72270234b2f6059e13018f975c313b1eb9fefcc09714048765d4d9efe961382c312e624572c0420762bdc5d5940cdf9be73a"
+  "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017"
 }
