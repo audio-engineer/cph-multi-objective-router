@@ -35,7 +35,7 @@ jobs:
       - name: Run Flake8
         run: uv run flake8 .
       - name: Run pytest
-        run: uv run pytest --cov app || true
+        run: uv run pytest --cov app --cov-report term-missing
   frontend:
     name: Front-End CI
     runs-on: ubuntu-latest
