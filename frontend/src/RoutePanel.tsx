@@ -1,4 +1,4 @@
-import { type Ref, useImperativeHandle, useState } from "react";
+import { type Ref, useImperativeHandle } from "react";
 import {
   Button,
   Paper,
@@ -18,9 +18,10 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { IconQuestionMark, IconTrash } from "@tabler/icons-react";
-import type { StepResponse } from "@/client";
+import type { RouteStepResponse } from "@/client";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png?url";
 import type { TravelMode } from "@/types/global.ts";
+import type { Method, Mode } from "@/App.tsx";
 
 export type PickMode = "start" | "end" | null;
 
@@ -37,7 +38,7 @@ interface RoutePanelProps {
   searchByAddress: (from: string, to: string) => Promise<void>;
   loading: boolean;
   distance: number | null;
-  steps: StepResponse[] | null;
+  steps: RouteStepResponse[] | null;
   selectedStepIndex: number | null;
   onSelectStepIndex: (index: number | null) => void;
   onTogglePickStart: () => void;
@@ -48,6 +49,13 @@ interface RoutePanelProps {
   pickMode: PickMode;
   travelMode: TravelMode;
   setTravelMode: (mode: TravelMode) => void;
+  mode: Mode;
+  setMode: (mode: Mode) => void;
+  method: Method;
+  setMethod: (method: Method) => void;
+  setScenic: (scenic: number) => void;
+  setSnow: (snow: number) => void;
+  setUphill: (uphill: number) => void;
 }
 
 const distanceToText = (distance: number) => {
@@ -74,6 +82,13 @@ export const RoutePanel = ({
   onClearAll,
   travelMode,
   setTravelMode,
+  mode,
+  setMode,
+  method,
+  setMethod,
+  setScenic,
+  setSnow,
+  setUphill,
 }: RoutePanelProps) => {
   const form = useForm({
     mode: "uncontrolled",
@@ -82,8 +97,6 @@ export const RoutePanel = ({
       to: "",
     },
   });
-
-  const [mode, setMode] = useState("fastest");
 
   useImperativeHandle(
     ref,
@@ -221,7 +234,9 @@ export const RoutePanel = ({
             </Group>
             <SegmentedControl
               value={mode}
-              onChange={setMode}
+              onChange={(value) => {
+                setMode(value as Mode);
+              }}
               fullWidth
               data={[
                 { label: "Fastest", value: "fastest" },
@@ -230,13 +245,26 @@ export const RoutePanel = ({
             />
             {mode === "advanced" && (
               <>
+                <SegmentedControl
+                  value={method}
+                  onChange={(value) => {
+                    setMethod(value as Method);
+                  }}
+                  fullWidth
+                  mt="md"
+                  data={[
+                    { label: "Weighted", value: "weighted" },
+                    { label: "Pareto", value: "pareto" },
+                  ]}
+                />
                 <Text mt="md">Scenic</Text>
                 <Slider
                   color="blue"
                   size="xl"
                   mt="sm"
                   mb="lg"
-                  defaultValue={50}
+                  defaultValue={0}
+                  onChange={setScenic}
                   marks={[
                     { value: 25, label: "25%" },
                     { value: 50, label: "50%" },
@@ -250,6 +278,7 @@ export const RoutePanel = ({
                   mt="sm"
                   mb="lg"
                   defaultValue={0}
+                  onChange={setSnow}
                   marks={[
                     { value: 25, label: "25%" },
                     { value: 50, label: "50%" },
@@ -263,6 +292,7 @@ export const RoutePanel = ({
                   mt="sm"
                   mb="lg"
                   defaultValue={0}
+                  onChange={setUphill}
                   marks={[
                     { value: 25, label: "25%" },
                     { value: 50, label: "50%" },

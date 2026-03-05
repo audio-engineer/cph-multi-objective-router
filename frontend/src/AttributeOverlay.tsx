@@ -8,7 +8,7 @@ import {
 import type { Attribute, TravelMode } from "@/types/global.ts";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { layerLayerGetOptions } from "@/client/@tanstack/react-query.gen.ts";
+import { listLayersLayersGetOptions } from "@/client/@tanstack/react-query.gen.ts";
 import { toGeoJsonObject } from "@/utils.ts";
 import { Text } from "@mantine/core";
 import type { Feature } from "geojson";
@@ -43,13 +43,13 @@ export const AttributeOverlay = ({
   });
 
   const layerQuery = useQuery({
-    ...layerLayerGetOptions({
+    ...listLayersLayersGetOptions({
       query: {
-        attribute,
-        mode: travelMode,
-        bbox,
-        min_value: 0.01,
-        limit: 20000,
+        overlay_attribute: attribute,
+        transport_mode: travelMode,
+        bounding_box: bbox,
+        minimum_value: 0.01,
+        max_features: 20000,
       },
     }),
     placeholderData: (layerFeatureCollection) => layerFeatureCollection,

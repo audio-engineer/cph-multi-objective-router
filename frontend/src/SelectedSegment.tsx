@@ -1,12 +1,12 @@
 import { Polyline, useMap } from "react-leaflet";
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import type { LineString, StepResponse } from "@/client";
+import type { LineString, RouteStepResponse } from "@/client";
 import { fitBoundsRightOfPanel } from "@/utils.ts";
 
 interface SelectedSegmentProps {
   lineString: LineString;
-  step: StepResponse | null;
+  step: RouteStepResponse | null;
 }
 
 export const SelectedSegment = ({ lineString, step }: SelectedSegmentProps) => {
