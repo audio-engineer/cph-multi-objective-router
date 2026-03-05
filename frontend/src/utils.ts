@@ -1,5 +1,6 @@
-import type { GeoJsonObject } from "geojson";
+import type { GeoJsonObject, Feature, Polygon, MultiPolygon } from "geojson";
 import type {
+  BoundaryFeature,
   BoundaryFeatureCollection,
   LayerFeatureCollection,
   RouteFeatureCollection,
@@ -20,6 +21,24 @@ export const toGeoJsonObject = (
   }
 
   return copy as GeoJsonObject;
+};
+
+export const toTurfFeature = (
+  feature: BoundaryFeature,
+): Feature<Polygon | MultiPolygon> => {
+  const geometry: MultiPolygon = {
+    type: feature.geometry.type,
+    coordinates: feature.geometry.coordinates,
+    ...(feature.geometry.bbox == null ? {} : { bbox: feature.geometry.bbox }),
+  };
+
+  return {
+    type: "Feature",
+    geometry,
+    properties: feature.properties,
+    ...(feature.id == null ? {} : { id: feature.id }),
+    ...(feature.bbox == null ? {} : { bbox: feature.bbox }),
+  };
 };
 
 export const fitBoundsRightOfPanel = (

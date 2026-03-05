@@ -5,11 +5,11 @@ import {
 } from "@/RoutePanel.tsx";
 import { useEffect, useRef, useState } from "react";
 import { Map } from "@/Map.tsx";
-import {
-  type RouteFeatureCollection,
-  type Point,
-  type StepResponse,
-  type BoundaryFeatureCollection,
+import type {
+  RouteFeatureCollection,
+  Point,
+  RouteStepResponse,
+  BoundaryFeatureCollection,
 } from "@/client";
 import { StatusBar } from "@/StatusBar.tsx";
 import { Button, Loader, type MantineColor, Text } from "@mantine/core";
@@ -18,18 +18,21 @@ import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import {
-  routeCoordinatesRouteCoordsPostMutation,
-  routeRoutePostMutation,
-  boundaryBoundaryGetOptions,
-  reverseGeocodeReverseGetOptions,
+  createRouteFromCoordinatesRoutesByCoordinatesPostMutation,
+  createRouteFromAddressRoutesByAddressPostMutation,
+  getCurrentBoundaryBoundariesCurrentGetOptions,
+  reverseGeocodeGeocodingReverseGetOptions,
 } from "@/client/@tanstack/react-query.gen.ts";
 import type { TravelMode } from "@/types/global.ts";
+import { toTurfFeature } from "@/utils.ts";
 
 type MarkerKind = "start" | "end";
 type MarkerSource = "drag" | "pick";
 type LastSearch =
   | { source: "address"; from: string; to: string }
   | { source: "coords"; start: Point; end: Point };
+export type Mode = "fastest" | "advanced";
+export type Method = "weighted" | "pareto";
 
 const inBoundsBbox = (
   point: Point,
@@ -54,7 +57,7 @@ const isInsideBoundary = (
 
   return booleanPointInPolygon(
     turfPoint(point.coordinates as [number, number]),
-    boundaryFeature,
+    toTurfFeature(boundaryFeature),
   );
 };
 
@@ -85,7 +88,7 @@ const App = () => {
 
   const [route, setRoute] = useState<RouteFeatureCollection>();
   const [distance, setDistance] = useState<number | null>(null);
-  const [steps, setSteps] = useState<StepResponse[] | null>(null);
+  const [steps, setSteps] = useState<RouteStepResponse[] | null>(null);
   const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(
     null,
   );
@@ -102,12 +105,18 @@ const App = () => {
 
   const [travelMode, setTravelMode] = useState<TravelMode>("walk");
 
+  const [mode, setMode] = useState<Mode>("fastest");
+  const [method, setMethod] = useState<Method>("weighted");
+  const [scenic, setScenic] = useState(0);
+  const [snow, setSnow] = useState(0);
+  const [uphill, setUphill] = useState(0);
+
   const lastSearchRef = useRef<LastSearch | null>(null);
 
   const queryClient = useQueryClient();
 
   const boundaryQuery = useQuery({
-    ...boundaryBoundaryGetOptions(),
+    ...getCurrentBoundaryBoundariesCurrentGetOptions(),
   });
 
   useEffect(() => {
@@ -134,8 +143,8 @@ const App = () => {
     const [lon, lat] = point.coordinates;
 
     try {
-      const options = reverseGeocodeReverseGetOptions({
-        query: { lon, lat },
+      const options = reverseGeocodeGeocodingReverseGetOptions({
+        query: { longitude: lon, latitude: lat },
       });
 
       const data = await queryClient.fetchQuery(options);
@@ -163,14 +172,14 @@ const App = () => {
     setDistance(properties.distance);
     setSteps(properties.steps);
     setSelectedStepIndex(null);
-    setStartPos(data.meta.start);
-    setEndPos(data.meta.end);
+    setStartPos(data.meta.origin);
+    setEndPos(data.meta.destination);
 
     setStatusWithTtl("Ready.", "green", 500);
   };
 
   const routeAddressMutation = useMutation({
-    ...routeRoutePostMutation(),
+    ...createRouteFromAddressRoutesByAddressPostMutation(),
     onMutate: () => {
       setStatusWithTtl("Calculating route...", "blue", 1000);
     },
@@ -181,7 +190,7 @@ const App = () => {
   });
 
   const routeCoordinatesMutation = useMutation({
-    ...routeCoordinatesRouteCoordsPostMutation(),
+    ...createRouteFromCoordinatesRoutesByCoordinatesPostMutation(),
     onMutate: () => {
       setStatusWithTtl("Calculating route...", "blue", 1000);
     },
@@ -198,9 +207,17 @@ const App = () => {
 
     await routeAddressMutation.mutateAsync({
       body: {
-        travel_mode: travelMode,
-        from,
-        to,
+        transport_mode: travelMode,
+        origin: from,
+        destination: to,
+        route_options: {
+          route_selection_method: "weighted",
+          objective_weights: {
+            scenic,
+            avoid_snow: snow,
+            avoid_uphill: uphill,
+          },
+        },
       },
     });
   };
@@ -210,7 +227,19 @@ const App = () => {
 
     try {
       await routeCoordinatesMutation.mutateAsync({
-        body: { travel_mode: travelMode, start, end },
+        body: {
+          transport_mode: travelMode,
+          origin: start,
+          destination: end,
+          route_options: {
+            route_selection_method: "weighted",
+            objective_weights: {
+              scenic,
+              avoid_snow: snow,
+              avoid_uphill: uphill,
+            },
+          },
+        },
       });
 
       return true;
@@ -231,9 +260,9 @@ const App = () => {
     if (lastSearch.source === "address") {
       void routeAddressMutation.mutateAsync({
         body: {
-          travel_mode: mode,
-          from: lastSearch.from,
-          to: lastSearch.to,
+          transport_mode: mode,
+          origin: lastSearch.from,
+          destination: lastSearch.to,
         },
       });
 
@@ -242,9 +271,9 @@ const App = () => {
 
     void routeCoordinatesMutation.mutateAsync({
       body: {
-        travel_mode: mode,
-        start: lastSearch.start,
-        end: lastSearch.end,
+        transport_mode: mode,
+        origin: lastSearch.start,
+        destination: lastSearch.end,
       },
     });
   };
@@ -460,6 +489,13 @@ const App = () => {
         onClearAll={clearAll}
         travelMode={travelMode}
         setTravelMode={handleTravelModeChange}
+        mode={mode}
+        setMode={setMode}
+        method={method}
+        setMethod={setMethod}
+        setSnow={setSnow}
+        setScenic={setScenic}
+        setUphill={setUphill}
       />
       <StatusBar message={status} color={statusColor} />
     </div>

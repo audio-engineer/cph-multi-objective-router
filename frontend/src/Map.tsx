@@ -15,7 +15,7 @@ import type {
   BoundaryFeatureCollection,
   RouteFeatureCollection,
   Point,
-  StepResponse,
+  RouteStepResponse,
   MultiPolygon,
 } from "@/client";
 import type { FeatureCollection } from "geojson";
@@ -34,7 +34,7 @@ interface MapProps {
   endPosition: Point | null;
   onStartDragged: (pos: Point) => Promise<boolean>;
   onEndDragged: (pos: Point) => Promise<boolean>;
-  steps: StepResponse[] | null;
+  steps: RouteStepResponse[] | null;
   selectedStepIndex: number | null;
   pickMode: PickMode;
   onPickStart: (point: Point) => Promise<boolean>;
