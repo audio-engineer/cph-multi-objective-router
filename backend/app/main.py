@@ -6,11 +6,17 @@ from typing import TYPE_CHECKING, Any
 import osmnx as ox
 from fastapi import FastAPI, HTTPException
 from geojson_pydantic import MultiPolygon as PydanticMultiPolygon
+from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
+from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.geometry import mapping
 from starlette.middleware.cors import CORSMiddleware
 
 from app.geocoding import reverse_geocode_address
-from app.graph_state import GRAPH_STATE, get_edges_for_mode, load_graph_state
+from app.graph_state import (
+    GRAPH_STATE,
+    get_edges_for_mode,
+    load_graph_state,
+)
 from app.layer_service import build_layer_feature_collection
 from app.models import (
     AddressRouteRequest,
@@ -137,6 +143,14 @@ def get_current_boundary() -> BoundaryFeatureCollection:
 
     if boundary_polygon is None:
         raise HTTPException(status_code=500, detail="Graph not loaded.")
+
+    if isinstance(boundary_polygon, ShapelyPolygon):
+        boundary_polygon = ShapelyMultiPolygon([boundary_polygon])
+
+    if not isinstance(boundary_polygon, ShapelyMultiPolygon):
+        raise HTTPException(
+            status_code=500, detail="Boundary has invalid geometry type."
+        )
 
     boundary_geometry = PydanticMultiPolygon.model_validate(mapping(boundary_polygon))
 

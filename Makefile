@@ -7,7 +7,8 @@ OPENAPI_JSON := $(BACKEND_DIR)/openapi.json
         export-schema generate-client openapi \
         install install-backend install-frontend \
         update update-backend update-frontend \
-        format format-backend format-frontend
+        format format-backend format-frontend \
+        test test-backend test-frontend
 
 help:
 	@echo ""
@@ -40,6 +41,11 @@ help:
 	@echo "    format             Format all (backend + frontend)"
 	@echo "    format-backend     Format back end"
 	@echo "    format-frontend    Format front end"
+	@echo ""
+	@echo "  Testing"
+	@echo "    test               Test all (backend + frontend)"
+	@echo "    test-backend       Test back end"
+	@echo "    test-frontend      Test front end"
 
 backend:
 	cd $(BACKEND_DIR) && uv run fastapi dev
@@ -98,3 +104,11 @@ format-backend:
 
 format-frontend:
 	cd $(FRONTEND_DIR) && pnpm format
+
+test: test-backend test-frontend
+
+test-backend:
+	cd $(BACKEND_DIR) && uv run pytest --cov app --cov-report term-missing
+
+test-frontend:
+	cd $(FRONTEND_DIR) && pnpm test
