@@ -14,10 +14,10 @@
     "tsc:check": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@mantine/core": "^8.3.16",
-    "@mantine/form": "^8.3.16",
-    "@mantine/hooks": "^8.3.16",
-    "@tabler/icons-react": "^3.38.0",
+    "@mantine/core": "^8.3.17",
+    "@mantine/form": "^8.3.17",
+    "@mantine/hooks": "^8.3.17",
+    "@tabler/icons-react": "^3.40.0",
     "@tanstack/react-query": "^5.90.21",
     "@turf/boolean-point-in-polygon": "^7.3.4",
     "@turf/helpers": "^7.3.4",
@@ -28,30 +28,33 @@
     "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.3",
-    "@hey-api/openapi-ts": "0.93.1",
+    "@babel/core": "^7.29.0",
+    "@eslint/js": "^9.39.4",
+    "@hey-api/openapi-ts": "0.94.1",
+    "@rolldown/plugin-babel": "^0.2.1",
     "@tanstack/eslint-plugin-query": "^5.91.4",
+    "@types/babel__core": "^7.20.5",
     "@types/geojson": "^7946.0.16",
     "@types/leaflet": "^1.9.21",
-    "@types/node": "^24.11.0",
+    "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.4",
+    "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "eslint": "^9.39.3",
+    "eslint": "^9.39.4",
     "eslint-config-mantine": "^4.0.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "eslint-plugin-tsdoc": "^0.5.2",
-    "globals": "^16.5.0",
+    "globals": "^17.4.0",
     "postcss": "^8.5.8",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "prettier": "3.8.1",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.56.1",
-    "vite": "^7.3.1"
+    "typescript-eslint": "^8.57.0",
+    "vite": "^8.0.0"
   },
-  "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017"
+  "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be"
 }
