@@ -17,36 +17,20 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black[jupyter]>=26.1.0",
-    "flake8>=7.3.0",
-    "isort>=7.0.0",
+    "basedpyright>=1.38.2",
     "jupyterlab>=4.5.4",
-    "mypy>=1.19.1",
-    "pylint>=4.0.4",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.15.0",
-    "ty>=0.0.16",
     "types-geopandas>=1.1.2.20260120",
     "types-networkx>=3.6.1.20260210",
     "types-requests>=2.32.4.20260107",
     "types-shapely>=2.1.0.20250917",
 ]
 
-[tool.isort]
-profile = "black"
-
-[tool.mypy]
-files = "**/*.py"
-strict = true
-
-[[tool.mypy.overrides]]
-module = "geojson"
-ignore_missing_imports = true
-
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["COM812", "COM819", "TRY401", "I001"]
+ignore = ["COM812", "COM819", "TRY401"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = [

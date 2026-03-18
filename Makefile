@@ -85,10 +85,7 @@ lint: lint-backend lint-frontend
 lint-backend:
 	- cd $(BACKEND_DIR) && { \
 		uv run ruff check; \
-		uv run ty check; \
-		uv run flake8 .; \
-		uv run pylint app notebooks; \
-		uv run mypy; \
+		uv run basedpyright; \
 	}
 
 lint-frontend:
@@ -100,7 +97,7 @@ lint-frontend:
 format: format-backend format-frontend
 
 format-backend:
-	cd $(BACKEND_DIR) && uv run isort . && uv run black .
+	cd $(BACKEND_DIR) && uv run ruff format
 
 format-frontend:
 	cd $(FRONTEND_DIR) && pnpm format

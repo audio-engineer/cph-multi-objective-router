@@ -1,2 +1,5 @@
-[tool.ty.environment]
-python =  "backend/.venv"
+[tool.basedpyright]
+include = ["backend/app", "backend/tests", "backend/export_openapi.py"]
+venvPath = "backend"
+venv = ".venv"
+executionEnvironments = [{ root = "backend", extraPaths = ["backend"] }]

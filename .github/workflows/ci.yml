@@ -20,20 +20,12 @@ jobs:
           enable-cache: true
       - name: Install Dependencies
         run: uv sync --frozen --all-extras
-      - name: Run isort
-        run: uv run isort -c --diff .
-      - name: Run Black
-        run: uv run black --check --diff .
+      - name: Run Ruff Format
+        run: uv run ruff format --check --diff
       - name: Run Ruff
         run: uv run ruff check
-      - name: Run ty
-        run: uv run ty check
-      - name: Run mypy
-        run: uv run mypy
-      - name: Run Pylint
-        run: uv run pylint app notebooks export_openapi.py
-      - name: Run Flake8
-        run: uv run flake8 .
+      - name: Run basedpyright
+        run: uv run basedpyright
       - name: Run pytest
         run: uv run pytest --cov app --cov-report term-missing
   frontend:
