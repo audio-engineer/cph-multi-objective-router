@@ -1,5 +1,7 @@
 """Tests for layer filtering and feature serialization."""
 
+from typing import cast
+
 import geopandas as gpd
 import pytest
 from fastapi import HTTPException
@@ -11,6 +13,7 @@ from app.layer_service import (
     filter_edges_for_layer,
     parse_bounding_box,
 )
+from app.value_parsing import coerce_float
 
 
 def _build_layer_gdf() -> gpd.GeoDataFrame:
@@ -35,7 +38,7 @@ def test_parse_bounding_box_valid_and_invalid() -> None:
     assert parse_bounding_box("12.0,55.0,13.0,56.0") == (12.0, 55.0, 13.0, 56.0)
 
     with pytest.raises(HTTPException):
-        parse_bounding_box("12.0,55.0,13.0")
+        _ = parse_bounding_box("12.0,55.0,13.0")
 
 
 def test_filter_edges_for_layer_applies_threshold_and_limit() -> None:
@@ -51,7 +54,7 @@ def test_filter_edges_for_layer_applies_threshold_and_limit() -> None:
     )
 
     assert len(filtered) == 1
-    assert float(filtered.iloc[0]["snow"]) == 0.9
+    assert coerce_float(cast("object", filtered.iloc[0]["snow"])) == 0.9
 
 
 def test_filter_edges_for_layer_raises_for_missing_attribute() -> None:
@@ -59,7 +62,7 @@ def test_filter_edges_for_layer_raises_for_missing_attribute() -> None:
     geodataframe = _build_layer_gdf()
 
     with pytest.raises(HTTPException):
-        filter_edges_for_layer(
+        _ = filter_edges_for_layer(
             geodataframe,
             bounding_box=None,
             overlay_attribute="uphill",

@@ -1,7 +1,8 @@
 """Route planning logic independent from FastAPI endpoint wiring."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from itertools import pairwise
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 import osmnx as ox
@@ -9,7 +10,7 @@ from fastapi import HTTPException
 from geojson_pydantic import LineString as PydanticLineString
 from geojson_pydantic import Point as PydanticPoint
 from geojson_pydantic.types import Position2D, Position3D
-from networkx.utils import pairwise
+from networkx.exception import NetworkXNoPath
 
 from app.costs import (
     FALLBACK_EDGE_COST,
@@ -42,6 +43,9 @@ if TYPE_CHECKING:
 
 
 type EdgeSelector = Callable[[int, int], EdgeAttributes | None]
+type ShortestPathFunction = Callable[..., list[int]]
+type PathWeightFunction = Callable[..., float | int]
+type NearestNodeFunction = Callable[..., int]
 
 
 def _coerce_street_component(value: object) -> str | None:
@@ -50,9 +54,13 @@ def _coerce_street_component(value: object) -> str | None:
         return None
 
     if isinstance(value, list) and value:
-        return str(value[0])
+        street_components = cast("list[object]", value)
 
-    return str(value)
+        return str(street_components[0])
+
+    scalar_value = cast("object", value)
+
+    return str(scalar_value)
 
 
 def _resolve_street_name(edge_attributes: EdgeAttributes) -> str:
@@ -150,8 +158,9 @@ def compute_weighted_shortest_path(
 ) -> list[int]:
     """Compute weighted shortest path using objective-based edge costs."""
     normalized_weights = normalize_route_objective_weights(route_objective_weights)
+    shortest_path = cast("ShortestPathFunction", nx.shortest_path)
 
-    return nx.shortest_path(
+    return shortest_path(
         graph,
         source=origin_node_id,
         target=destination_node_id,
@@ -165,7 +174,9 @@ def compute_shortest_distance_path(
     destination_node_id: int,
 ) -> list[int]:
     """Compute shortest path by distance using length-weighted Dijkstra."""
-    return nx.shortest_path(
+    shortest_path = cast("ShortestPathFunction", nx.shortest_path)
+
+    return shortest_path(
         graph,
         source=origin_node_id,
         target=destination_node_id,
@@ -260,6 +271,24 @@ def _build_node_point(graph: MultiDiGraphAny, node_id: int) -> PydanticPoint:
     )
 
 
+def _find_nearest_node_id(
+    graph: MultiDiGraphAny,
+    *,
+    longitude: float,
+    latitude: float,
+) -> int:
+    """Find the nearest graph node to a lon/lat coordinate."""
+    nearest_nodes = cast("NearestNodeFunction", ox.distance.nearest_nodes)
+
+    return int(
+        nearest_nodes(
+            graph,
+            X=longitude,
+            Y=latitude,
+        )
+    )
+
+
 def build_route_feature_collection(
     *,
     graph_state: LoadedGraphState,
@@ -282,15 +311,15 @@ def build_route_feature_collection(
     )
 
     try:
-        origin_node_id = ox.distance.nearest_nodes(
+        origin_node_id = _find_nearest_node_id(
             graph,
-            X=route_coordinates.origin_longitude,
-            Y=route_coordinates.origin_latitude,
+            longitude=route_coordinates.origin_longitude,
+            latitude=route_coordinates.origin_latitude,
         )
-        destination_node_id = ox.distance.nearest_nodes(
+        destination_node_id = _find_nearest_node_id(
             graph,
-            X=route_coordinates.destination_longitude,
-            Y=route_coordinates.destination_latitude,
+            longitude=route_coordinates.destination_longitude,
+            latitude=route_coordinates.destination_latitude,
         )
     except Exception as exception:  # pragma: no cover - library failure path
         raise HTTPException(
@@ -305,7 +334,7 @@ def build_route_feature_collection(
             destination_node_id,
             route_options,
         )
-    except nx.exception.NetworkXNoPath:
+    except NetworkXNoPath:
         raise HTTPException(status_code=500, detail="No path found.") from None
     except Exception as exception:  # pragma: no cover - library failure path
         raise HTTPException(
@@ -314,8 +343,9 @@ def build_route_feature_collection(
         ) from exception
 
     route_steps = compute_route_steps_for_method(graph, path_node_ids, route_options)
+    path_weight = cast("PathWeightFunction", nx.path_weight)
     route_distance_meters = (
-        float(nx.path_weight(graph, path_node_ids, weight="length"))
+        float(path_weight(graph, path_node_ids, weight="length"))
         if path_node_ids
         else 0.0
     )

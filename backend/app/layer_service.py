@@ -1,12 +1,12 @@
 """Layer filtering and serialization logic."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastapi import HTTPException
 from geojson_pydantic import LineString as PydanticLineString
-from geojson_pydantic.types import Position2D
-from shapely import box
+from geojson_pydantic.types import Position, Position2D
 from shapely.geometry import LineString as ShapelyLineString
+from shapely.geometry import Polygon as ShapelyPolygon
 
 from app.models import (
     LayerFeature,
@@ -14,8 +14,11 @@ from app.models import (
     LayerProperties,
     OverlayAttribute,
 )
+from app.value_parsing import coerce_float
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import geopandas as gpd
     from shapely.coords import CoordinateSequence
 
@@ -61,7 +64,7 @@ def filter_edges_for_layer(
         min_longitude, min_latitude, max_longitude, max_latitude = parse_bounding_box(
             bounding_box
         )
-        bounding_geometry = box(
+        bounding_geometry = ShapelyPolygon.from_bounds(
             min_longitude,
             min_latitude,
             max_longitude,
@@ -108,11 +111,13 @@ def build_layer_features(
         if len(coordinates) == 0:
             continue
 
-        line_coordinates = [
+        line_coordinates: list[Position] = [
             Position2D(float(longitude), float(latitude))
             for longitude, latitude in coordinates
         ]
-        overlay_value = float(getattr(row, overlay_attribute))
+        row_to_dict = cast("Callable[[], dict[str, object]]", row._asdict)
+        row_values = row_to_dict()
+        overlay_value = coerce_float(row_values.get(overlay_attribute), default=0.0)
 
         layer_features.append(
             LayerFeature(

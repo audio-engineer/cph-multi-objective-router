@@ -1,7 +1,7 @@
 """FastAPI composition layer for the multi-objective router."""
 
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import osmnx as ox
 from fastapi import FastAPI, HTTPException
@@ -41,6 +41,17 @@ PLACE_NAME = "Copenhagen Municipality, Capital Region of Denmark, Denmark"
 OVERLAY_DIRECTORY = "data/overlays"
 
 
+def _normalize_boundary_polygon(boundary_geometry: object) -> ShapelyMultiPolygon:
+    """Normalize boundary geometry to a MultiPolygon."""
+    if isinstance(boundary_geometry, ShapelyPolygon):
+        return ShapelyMultiPolygon([boundary_geometry])
+
+    if isinstance(boundary_geometry, ShapelyMultiPolygon):
+        return boundary_geometry
+
+    raise HTTPException(status_code=500, detail="Boundary has invalid geometry type.")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Load graph resources on startup."""
@@ -56,12 +67,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(lifespan=lifespan)
 
 
-def _cors_middleware_factory() -> Any:  # noqa: ANN401
-    return CORSMiddleware
-
-
 app.add_middleware(
-    _cors_middleware_factory(),
+    CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -139,18 +146,12 @@ def list_layers(
 @app.get("/boundaries/current", response_model=BoundaryFeatureCollection)
 def get_current_boundary() -> BoundaryFeatureCollection:
     """Get boundary geometry for the loaded routing area."""
-    boundary_polygon = GRAPH_STATE.boundary_polygon
+    boundary_geometry = GRAPH_STATE.boundary_polygon
 
-    if boundary_polygon is None:
+    if boundary_geometry is None:
         raise HTTPException(status_code=500, detail="Graph not loaded.")
 
-    if isinstance(boundary_polygon, ShapelyPolygon):
-        boundary_polygon = ShapelyMultiPolygon([boundary_polygon])
-
-    if not isinstance(boundary_polygon, ShapelyMultiPolygon):
-        raise HTTPException(
-            status_code=500, detail="Boundary has invalid geometry type."
-        )
+    boundary_polygon = _normalize_boundary_polygon(boundary_geometry)
 
     boundary_geometry = PydanticMultiPolygon.model_validate(mapping(boundary_polygon))
 

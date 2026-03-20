@@ -1,7 +1,7 @@
 """Cost and weighting utilities for route optimization."""
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from app.models import NormalizedRouteObjectiveWeights, RouteObjectiveWeights
 from app.value_parsing import coerce_float
@@ -17,10 +17,14 @@ def _coerce_edge_attributes(candidate: object) -> EdgeAttributes | None:
     if not isinstance(candidate, Mapping):
         return None
 
-    if not all(isinstance(key, str) for key in candidate):
+    candidate_mapping = cast("Mapping[object, object]", candidate)
+
+    if not all(isinstance(key, str) for key in candidate_mapping):
         return None
 
-    return {str(key): value for key, value in candidate.items()}
+    return {
+        key: value for key, value in candidate_mapping.items() if isinstance(key, str)
+    }
 
 
 def extract_parallel_edge_attributes(candidate: object) -> list[EdgeAttributes]:

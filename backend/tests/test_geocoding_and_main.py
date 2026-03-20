@@ -27,6 +27,8 @@ from app.models import (
 class _FakeResponse:
     """Simple fake response object for mocking requests.get."""
 
+    _payload: object
+
     def __init__(self, payload: object) -> None:
         self._payload = payload
 
@@ -81,7 +83,7 @@ def test_main_route_helper_builds_from_addresses(
     """Address route helper should geocode and delegate to route builder."""
 
     def fake_geocode(_address: str) -> tuple[float, float]:
-        return (55.0, 12.0)
+        return 55.0, 12.0
 
     def fake_route_builder(**_kwargs: object) -> RouteFeatureCollection:
         return dummy_route_feature_collection
@@ -178,16 +180,22 @@ def test_get_current_boundary_raises_when_not_loaded() -> None:
     GRAPH_STATE.boundary_polygon = None
 
     with pytest.raises(HTTPException):
-        get_current_boundary()
+        _ = get_current_boundary()
 
 
 def test_reverse_geocode_endpoint_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
     """Main reverse endpoint should delegate directly to geocoding helper."""
+
+    def fake_reverse_geocode_address(
+        longitude: float,
+        latitude: float,
+        zoom_level: int = 18,
+    ) -> ReverseGeocodeResponse:
+        return ReverseGeocodeResponse(address=f"{longitude},{latitude},{zoom_level}")
+
     monkeypatch.setattr(
         "app.main.reverse_geocode_address",
-        lambda longitude, latitude, zoom_level=18: ReverseGeocodeResponse(
-            address=f"{longitude},{latitude},{zoom_level}"
-        ),
+        fake_reverse_geocode_address,
     )
 
     response = reverse_geocode(12.0, 55.0, 17)
@@ -212,4 +220,4 @@ def test_address_route_helper_surfaces_geocoding_failure(
     )
 
     with pytest.raises(HTTPException):
-        create_route_from_address(request)
+        _ = create_route_from_address(request)

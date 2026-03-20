@@ -16,9 +16,10 @@ export const toGeoJsonObject = (
 ): GeoJsonObject => {
   const copy = { ...featureCollection };
 
-  if (copy.bbox === null) {
-    delete copy.bbox;
-  }
+  // TODO Figure out what to do with those properties
+  // if (copy.bbox === null) {
+  //   delete copy.bbox;
+  // }
 
   return copy as GeoJsonObject;
 };
@@ -36,8 +37,9 @@ export const toTurfFeature = (
     type: "Feature",
     geometry,
     properties: feature.properties,
-    ...(feature.id == null ? {} : { id: feature.id }),
-    ...(feature.bbox == null ? {} : { bbox: feature.bbox }),
+    // TODO Figure out what to do with those properties
+    // ...(feature.id == null ? {} : { id: feature.id }),
+    // ...(feature.bbox == null ? {} : { bbox: feature.bbox }),
   };
 };
 
