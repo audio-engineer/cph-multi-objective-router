@@ -1,7 +1,5 @@
 """Tests for route planning utilities."""
 
-# pylint: disable=unsubscriptable-object, unused-argument
-
 import networkx as nx
 import pytest
 from fastapi import HTTPException
@@ -94,6 +92,7 @@ def test_build_route_feature_collection_success(
         X: float,
         Y: float,
     ) -> int:
+        _ = X, Y
         call_count["value"] += 1
 
         if call_count["value"] == 1:
@@ -131,6 +130,7 @@ def test_build_route_feature_collection_handles_snapping_error(
         X: float,
         Y: float,
     ) -> int:
+        _ = X, Y
         raise RuntimeError("snap failed")
 
     monkeypatch.setattr(
@@ -138,7 +138,7 @@ def test_build_route_feature_collection_handles_snapping_error(
     )
 
     with pytest.raises(HTTPException):
-        build_route_feature_collection(
+        _ = build_route_feature_collection(
             graph_state=state,
             route_coordinates=RouteCoordinates(12.0, 55.0, 12.2, 55.2),
             transport_mode="bike",
@@ -151,8 +151,8 @@ def test_build_route_feature_collection_handles_no_path(
 ) -> None:
     """NetworkX no-path errors should be mapped to HTTP 500."""
     graph: nx.MultiDiGraph[int] = nx.MultiDiGraph()
-    graph.add_node(1, x=12.0, y=55.0)
-    graph.add_node(2, x=12.2, y=55.2)
+    _ = graph.add_node(1, x=12.0, y=55.0)
+    _ = graph.add_node(2, x=12.2, y=55.2)
     state = LoadedGraphState(bike_graph=graph)
 
     sequence = [1, 2]
@@ -163,6 +163,7 @@ def test_build_route_feature_collection_handles_no_path(
         X: float,
         Y: float,
     ) -> int:
+        _ = X, Y
         return sequence.pop(0)
 
     monkeypatch.setattr(
@@ -170,7 +171,7 @@ def test_build_route_feature_collection_handles_no_path(
     )
 
     with pytest.raises(HTTPException):
-        build_route_feature_collection(
+        _ = build_route_feature_collection(
             graph_state=state,
             route_coordinates=RouteCoordinates(12.0, 55.0, 12.2, 55.2),
             transport_mode="bike",

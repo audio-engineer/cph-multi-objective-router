@@ -1,5 +1,8 @@
 [tool.basedpyright]
+typeCheckingMode = "all"
 include = ["backend/app", "backend/tests", "backend/export_openapi.py"]
+exclude = ["backend/notebooks"]
+ignore = ["backend/notebooks"]
 venvPath = "backend"
 venv = ".venv"
 executionEnvironments = [{ root = "backend", extraPaths = ["backend"] }]

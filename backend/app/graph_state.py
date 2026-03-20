@@ -1,7 +1,7 @@
 """Graph loading and in-memory application state."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import osmnx as ox
 from fastapi import HTTPException
@@ -12,10 +12,14 @@ from shapely.geometry import Polygon as ShapelyPolygon
 from app.overlays import apply_all_overlays
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import geopandas as gpd
 
     from app.models import TransportMode
     from app.typing_aliases import MultiDiGraphAny
+
+type BoundaryGeometry = ShapelyPolygon | ShapelyMultiPolygon
 
 
 @dataclass(slots=True)
@@ -26,27 +30,61 @@ class LoadedGraphState:
     walk_graph: MultiDiGraphAny | None = None
     bike_edges: gpd.GeoDataFrame | None = None
     walk_edges: gpd.GeoDataFrame | None = None
-    boundary_polygon: ShapelyMultiPolygon | None = None
+    boundary_polygon: BoundaryGeometry | None = None
 
 
 GRAPH_STATE = LoadedGraphState()
 
 
-def build_edge_geodataframe(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
-    """Build edge GeoDataFrame from a graph, ensuring WGS84 CRS."""
-    edge_geodataframe = ox.graph_to_gdfs(
+def _graph_to_edge_geodataframe(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
+    """Call OSMnx graph_to_gdfs with the edge-only signature."""
+    graph_to_gdfs = cast(
+        "Callable[..., gpd.GeoDataFrame]",
+        ox.graph_to_gdfs,
+    )
+
+    return graph_to_gdfs(
         graph,
         nodes=False,
         edges=True,
         fill_edge_geometry=True,
     )
 
+
+def _graph_from_place(
+    place_name: str,
+    *,
+    network_type: str,
+) -> MultiDiGraphAny:
+    """Call OSMnx graph_from_place with a typed return value."""
+    graph_from_place = cast(
+        "Callable[..., MultiDiGraphAny]",
+        ox.graph_from_place,
+    )
+
+    return graph_from_place(place_name, network_type=network_type)
+
+
+def _geocode_to_gdf(place_name: str) -> gpd.GeoDataFrame:
+    """Call OSMnx geocode_to_gdf with a typed return value."""
+    geocode_to_gdf = cast(
+        "Callable[[str], gpd.GeoDataFrame]",
+        ox.geocode_to_gdf,
+    )
+
+    return geocode_to_gdf(place_name)
+
+
+def build_edge_geodataframe(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
+    """Build edge GeoDataFrame from a graph, ensuring WGS84 CRS."""
+    edge_geodataframe = _graph_to_edge_geodataframe(graph)
+
     return edge_geodataframe.set_crs("EPSG:4326", allow_override=True)
 
 
 def load_boundary_polygon(place_name: str) -> ShapelyMultiPolygon:
     """Load and normalize place boundary geometry as a MultiPolygon."""
-    boundary_geodataframe = ox.geocode_to_gdf(place_name)
+    boundary_geodataframe = _geocode_to_gdf(place_name)
     boundary_geometry = boundary_geodataframe.geometry.iloc[0]
 
     if isinstance(boundary_geometry, ShapelyPolygon):
@@ -67,8 +105,8 @@ def load_graph_state(
     graph_state: LoadedGraphState,
 ) -> None:
     """Load graphs, overlays, edge indexes, and boundaries into state."""
-    bike_graph = ox.graph_from_place(place_name, network_type="bike")
-    walk_graph = ox.graph_from_place(place_name, network_type="walk")
+    bike_graph = _graph_from_place(place_name, network_type="bike")
+    walk_graph = _graph_from_place(place_name, network_type="walk")
 
     apply_all_overlays(bike_graph, overlay_directory)
     apply_all_overlays(walk_graph, overlay_directory)

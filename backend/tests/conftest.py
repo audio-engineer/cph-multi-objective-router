@@ -1,7 +1,5 @@
 """Shared pytest fixtures for backend tests."""
 
-# pylint: disable=duplicate-code, unsubscriptable-object
-
 import networkx as nx
 import pytest
 from geojson_pydantic import LineString as PydanticLineString
@@ -23,8 +21,8 @@ def simple_graph() -> nx.MultiDiGraph[int]:
     graph.add_node(1, x=12.0, y=55.0)
     graph.add_node(2, x=12.1, y=55.1)
     graph.add_node(3, x=12.2, y=55.2)
-    graph.add_edge(1, 2, length=100.0, name="Main Street")
-    graph.add_edge(2, 3, length=120.0, name="Main Street")
+    _ = graph.add_edge(1, 2, length=100.0, name="Main Street")
+    _ = graph.add_edge(2, 3, length=120.0, name="Main Street")
 
     return graph
 

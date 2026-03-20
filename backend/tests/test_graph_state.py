@@ -1,7 +1,5 @@
 """Tests for graph state loading and access utilities."""
 
-# pylint: disable=unsubscriptable-object
-
 import geopandas as gpd
 import networkx as nx
 import pytest
@@ -38,7 +36,7 @@ def test_get_graph_and_edges_for_mode() -> None:
 def test_get_graph_for_mode_raises_when_missing() -> None:
     """Accessor should raise HTTP 500 when graph state is missing."""
     with pytest.raises(HTTPException):
-        get_graph_for_mode(LoadedGraphState(), "bike")
+        _ = get_graph_for_mode(LoadedGraphState(), "bike")
 
 
 def test_validate_point_within_boundary() -> None:
@@ -59,9 +57,10 @@ def test_load_boundary_polygon(monkeypatch: pytest.MonkeyPatch) -> None:
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(
-        "app.graph_state.ox.geocode_to_gdf", lambda _place: geodataframe
-    )
+    def fake_geocode_to_gdf(_place: str) -> gpd.GeoDataFrame:
+        return geodataframe
+
+    monkeypatch.setattr("app.graph_state.ox.geocode_to_gdf", fake_geocode_to_gdf)
 
     loaded_boundary = load_boundary_polygon("place")
 
@@ -83,12 +82,30 @@ def test_load_graph_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
         return walk_graph
 
+    def fake_apply_all_overlays(
+        _graph: nx.MultiDiGraph[int],
+        _overlay_directory: str,
+    ) -> None:
+        return None
+
+    def fake_build_edge_geodataframe(
+        _graph: nx.MultiDiGraph[int],
+    ) -> gpd.GeoDataFrame:
+        return geodataframe
+
+    def fake_load_boundary_polygon(_place: str) -> MultiPolygon:
+        return boundary
+
     monkeypatch.setattr("app.graph_state.ox.graph_from_place", fake_graph_from_place)
-    monkeypatch.setattr("app.graph_state.apply_all_overlays", lambda _g, _d: None)
+    monkeypatch.setattr("app.graph_state.apply_all_overlays", fake_apply_all_overlays)
     monkeypatch.setattr(
-        "app.graph_state.build_edge_geodataframe", lambda _g: geodataframe
+        "app.graph_state.build_edge_geodataframe",
+        fake_build_edge_geodataframe,
     )
-    monkeypatch.setattr("app.graph_state.load_boundary_polygon", lambda _p: boundary)
+    monkeypatch.setattr(
+        "app.graph_state.load_boundary_polygon",
+        fake_load_boundary_polygon,
+    )
 
     state = LoadedGraphState()
     load_graph_state(
@@ -113,9 +130,10 @@ def test_load_boundary_polygon_raises_for_invalid_geometry(
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(
-        "app.graph_state.ox.geocode_to_gdf", lambda _place: geodataframe
-    )
+    def fake_geocode_to_gdf(_place: str) -> gpd.GeoDataFrame:
+        return geodataframe
+
+    monkeypatch.setattr("app.graph_state.ox.geocode_to_gdf", fake_geocode_to_gdf)
 
     with pytest.raises(TypeError):
-        load_boundary_polygon("place")
+        _ = load_boundary_polygon("place")

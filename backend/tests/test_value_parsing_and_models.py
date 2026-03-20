@@ -1,7 +1,5 @@
 """Tests for lightweight parsing and model behavior."""
 
-# pylint: disable=no-member
-
 from app.models import (
     AddressRouteRequest,
     CoordinateRouteRequest,

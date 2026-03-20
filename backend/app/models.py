@@ -1,15 +1,11 @@
 """Pydantic schemas and domain models for the routing API."""
 
-# pylint: disable=too-few-public-methods
-
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
-from geojson_pydantic import Feature as PydanticFeature
-from geojson_pydantic import FeatureCollection as PydanticFeatureCollection
-from geojson_pydantic import LineString as PydanticLineString
-from geojson_pydantic import MultiPolygon as PydanticMultiPolygon
-from geojson_pydantic import Point as PydanticPoint
+from geojson_pydantic import LineString as PydanticLineString  # noqa: TC002
+from geojson_pydantic import MultiPolygon as PydanticMultiPolygon  # noqa: TC002
+from geojson_pydantic import Point as PydanticPoint  # noqa: TC002
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 TransportMode = Literal["bike", "walk"]
@@ -35,7 +31,7 @@ def build_default_route_objective_weights() -> RouteObjectiveWeights:
 class RouteComputationOptions(BaseModel):
     """Options controlling how routes are computed."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
     route_selection_method: RouteSelectionMethod = Field(
         default="shortest",
@@ -63,7 +59,7 @@ def build_default_route_options() -> RouteComputationOptions:
 class CoordinateRouteRequest(BaseModel):
     """Route request where origin and destination are coordinates."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
     transport_mode: TransportMode = Field(
         validation_alias=AliasChoices("transport_mode", "travel_mode")
@@ -81,7 +77,7 @@ class CoordinateRouteRequest(BaseModel):
 class AddressRouteRequest(BaseModel):
     """Route request where origin and destination are addresses."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
     transport_mode: TransportMode = Field(
         validation_alias=AliasChoices("transport_mode", "travel_mode")
@@ -110,9 +106,10 @@ class RouteProperties(BaseModel):
     steps: list[RouteStepResponse]
 
 
-class RouteFeature(PydanticFeature[PydanticLineString, RouteProperties]):
-    """Route feature geometry + properties."""
+class RouteFeature(BaseModel):
+    """Route feature geometry and properties."""
 
+    type: Literal["Feature"]
     geometry: PydanticLineString
     properties: RouteProperties
 
@@ -124,9 +121,11 @@ class RouteMeta(BaseModel):
     destination: PydanticPoint
 
 
-class RouteFeatureCollection(PydanticFeatureCollection[RouteFeature]):
+class RouteFeatureCollection(BaseModel):
     """Route FeatureCollection plus metadata."""
 
+    type: Literal["FeatureCollection"]
+    features: list[RouteFeature]
     meta: RouteMeta
 
 
@@ -136,9 +135,10 @@ class BoundaryProperties(BaseModel):
     name: str
 
 
-class BoundaryFeature(PydanticFeature[PydanticMultiPolygon, BoundaryProperties]):
-    """Boundary feature geometry + properties."""
+class BoundaryFeature(BaseModel):
+    """Boundary feature geometry and properties."""
 
+    type: Literal["Feature"]
     geometry: PydanticMultiPolygon
     properties: BoundaryProperties
 
@@ -149,9 +149,11 @@ class BoundaryMeta(BaseModel):
     bounds: tuple[float, float, float, float]
 
 
-class BoundaryFeatureCollection(PydanticFeatureCollection[BoundaryFeature]):
+class BoundaryFeatureCollection(BaseModel):
     """Boundary FeatureCollection plus metadata."""
 
+    type: Literal["FeatureCollection"]
+    features: list[BoundaryFeature]
     meta: BoundaryMeta
 
 
@@ -164,15 +166,19 @@ class LayerProperties(BaseModel):
     value: float
 
 
-class LayerFeature(PydanticFeature[PydanticLineString, LayerProperties]):
-    """Layer feature geometry + properties."""
+class LayerFeature(BaseModel):
+    """Layer feature geometry and properties."""
 
+    type: Literal["Feature"]
     geometry: PydanticLineString
     properties: LayerProperties
 
 
-class LayerFeatureCollection(PydanticFeatureCollection[LayerFeature]):
+class LayerFeatureCollection(BaseModel):
     """Layer FeatureCollection."""
+
+    type: Literal["FeatureCollection"]
+    features: list[LayerFeature]
 
 
 class ReverseGeocodeResponse(BaseModel):

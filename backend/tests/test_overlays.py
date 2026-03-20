@@ -1,6 +1,6 @@
 """Tests for graph overlay loading and application."""
 
-# pylint: disable=redefined-outer-name, unsubscriptable-object
+from typing import cast
 
 import geopandas as gpd
 import networkx as nx
@@ -13,6 +13,7 @@ from app.overlays import (
     initialize_overlay_attributes,
     load_overlay_polygons,
 )
+from app.value_parsing import coerce_float
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def overlay_graph() -> nx.MultiDiGraph[int]:
     graph: nx.MultiDiGraph[int] = nx.MultiDiGraph()
     graph.add_node(1, x=0.0, y=0.0)
     graph.add_node(2, x=2.0, y=0.0)
-    graph.add_edge(1, 2, length=2.0)
+    _ = graph.add_edge(1, 2, length=2.0)
 
     return graph
 
@@ -52,7 +53,7 @@ def test_initialize_and_apply_overlay_attribute(
     edge_data = overlay_graph.get_edge_data(1, 2)
     assert edge_data is not None
     first_edge = edge_data[0]
-    assert float(first_edge["snow"]) == 0.8
+    assert coerce_float(cast("object", first_edge["snow"])) == 0.8
 
 
 def test_load_overlay_polygons_handles_polygon_and_multipolygon(
@@ -69,7 +70,10 @@ def test_load_overlay_polygons_handles_polygon_and_multipolygon(
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr("app.overlays.gpd.read_file", lambda _path: geodataframe)
+    def fake_read_file(_path: object) -> gpd.GeoDataFrame:
+        return geodataframe
+
+    monkeypatch.setattr("app.overlays.gpd.read_file", fake_read_file)
 
     polygons, values = load_overlay_polygons("data/overlays/snow.json")
 
@@ -89,7 +93,10 @@ def test_load_overlay_polygons_raises_for_invalid_geometry(
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr("app.overlays.gpd.read_file", lambda _path: geodataframe)
+    def fake_read_file(_path: object) -> gpd.GeoDataFrame:
+        return geodataframe
+
+    monkeypatch.setattr("app.overlays.gpd.read_file", fake_read_file)
 
     with pytest.raises(TypeError):
-        load_overlay_polygons("data/overlays/scenic.json")
+        _ = load_overlay_polygons("data/overlays/scenic.json")

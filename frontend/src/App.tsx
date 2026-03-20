@@ -298,7 +298,7 @@ const App = () => {
         setStatusColor("green");
 
         statusTimeoutRef.current = null;
-      }, ttlMs);
+      }, ttlMs) as unknown as number;
     }
   };
 

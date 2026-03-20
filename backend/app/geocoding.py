@@ -1,9 +1,16 @@
 """External geocoding helpers."""
 
+from typing import TYPE_CHECKING, cast
+
 import osmnx as ox
 import requests
 
 from app.models import ReverseGeocodeResponse
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+type JsonObject = dict[str, object]
 
 
 def reverse_geocode_address(
@@ -14,6 +21,7 @@ def reverse_geocode_address(
 ) -> ReverseGeocodeResponse:
     """Reverse geocode coordinates to a single-line road + house number string."""
     reverse_url = ox.settings.nominatim_url.rstrip("/") + "/reverse"
+    request_get = cast("Callable[..., requests.Response]", requests.get)
 
     params: dict[str, str | int | float] = {
         "format": "jsonv2",
@@ -27,27 +35,29 @@ def reverse_geocode_address(
         "Accept-Language": ox.settings.http_accept_language,
     }
 
-    response = requests.get(
+    response = request_get(
         reverse_url,
         params=params,
         headers=headers,
         timeout=ox.settings.requests_timeout,
-        **ox.settings.requests_kwargs,
+        **dict(ox.settings.requests_kwargs),
     )
     response.raise_for_status()
 
-    payload = response.json()
+    payload = cast("object", response.json())
 
     if not isinstance(payload, dict):
         return ReverseGeocodeResponse(address="")
 
-    raw_address = payload.get("address")
+    payload_object = cast("JsonObject", payload)
+    raw_address = payload_object.get("address")
 
     if not isinstance(raw_address, dict):
         return ReverseGeocodeResponse(address="")
 
-    road = str(raw_address.get("road") or "").strip()
-    house_number = str(raw_address.get("house_number") or "").strip()
+    address_object = cast("JsonObject", raw_address)
+    road = str(address_object.get("road") or "").strip()
+    house_number = str(address_object.get("house_number") or "").strip()
     formatted_address = " ".join(part for part in (road, house_number) if part)
 
     return ReverseGeocodeResponse(address=formatted_address)

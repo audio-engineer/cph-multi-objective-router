@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import geopandas as gpd
 import numpy as np
+import numpy.typing as npt
 from shapely import STRtree
 from shapely.geometry import LineString as ShapelyLineString
 from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
@@ -16,7 +17,11 @@ from app.models import OVERLAY_ATTRIBUTE_NAMES, OverlayAttribute
 from app.value_parsing import coerce_float
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from app.typing_aliases import EdgeAttributes, MultiDiGraphAny
+
+type PolygonIndexArray = npt.NDArray[np.int64]
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +76,11 @@ def load_overlay_polygons(
 ) -> tuple[list[ShapelyPolygon], list[float]]:
     """Load overlay polygons and corresponding values from GeoJSON."""
     overlay_path = _overlay_file_path(relative_overlay_path)
-    overlay_geodataframe = gpd.read_file(overlay_path).to_crs("EPSG:4326")
+    read_file = cast(
+        "Callable[..., gpd.GeoDataFrame]",
+        gpd.read_file,
+    )
+    overlay_geodataframe = read_file(overlay_path).to_crs("EPSG:4326")
 
     if "value" not in overlay_geodataframe.columns:
         error_message = (
@@ -88,9 +97,12 @@ def load_overlay_polygons(
     polygons: list[ShapelyPolygon] = []
     values: list[float] = []
 
+    geometry_values = cast("list[object]", overlay_geodataframe.geometry.to_list())
+    overlay_raw_values = cast("list[object]", overlay_geodataframe["value"].to_list())
+
     for geometry, raw_value in zip(
-        overlay_geodataframe.geometry.to_list(),
-        overlay_geodataframe["value"].to_list(),
+        geometry_values,
+        overlay_raw_values,
         strict=True,
     ):
         overlay_value = coerce_float(raw_value, default=0.0)
@@ -117,21 +129,17 @@ def load_overlay_polygons(
 
 def _collect_covering_overlay_values(
     midpoint: ShapelyPoint,
-    candidate_indices: object,
+    candidate_indices: PolygonIndexArray,
     overlay_polygons: list[ShapelyPolygon],
     polygon_value_by_id: dict[int, float],
 ) -> list[float]:
     """Collect overlay values of polygons covering the midpoint."""
     overlay_values: list[float] = []
 
-    if not isinstance(candidate_indices, np.ndarray):
-        return overlay_values
+    candidate_index_list = cast("list[int]", candidate_indices.astype(int).tolist())
 
-    for candidate in candidate_indices.flat:
-        if not isinstance(candidate, (np.integer, int)):
-            continue
-
-        polygon = overlay_polygons[int(candidate)]
+    for candidate_index in candidate_index_list:
+        polygon = overlay_polygons[int(candidate_index)]
 
         if polygon.covers(midpoint):
             overlay_values.append(polygon_value_by_id[id(polygon)])
@@ -179,9 +187,8 @@ def _apply_overlay_to_edge(
 
 def initialize_overlay_attributes(graph: MultiDiGraphAny) -> None:
     """Ensure every edge has all overlay attributes initialized to zero."""
-    for _, _, _, edge_attributes in graph.edges(keys=True, data=True):
-        if not isinstance(edge_attributes, dict):
-            continue
+    for source_node_id, target_node_id, edge_attributes in graph.edges(data=True):
+        _ = source_node_id, target_node_id
 
         for overlay_attribute in OVERLAY_ATTRIBUTE_NAMES:
             edge_attributes.setdefault(overlay_attribute, 0.0)
@@ -207,16 +214,7 @@ def apply_overlay_attribute(
         combination_mode=combination_mode,
     )
 
-    for source_node_id, target_node_id, _, edge_attributes in graph.edges(
-        keys=True,
-        data=True,
-    ):
-        if not isinstance(source_node_id, int) or not isinstance(target_node_id, int):
-            continue
-
-        if not isinstance(edge_attributes, dict):
-            continue
-
+    for source_node_id, target_node_id, edge_attributes in graph.edges(data=True):
         _apply_overlay_to_edge(
             context=context,
             source_node_id=source_node_id,

@@ -47,3 +47,11 @@ ignore = ["COM812", "COM819", "TRY401"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.basedpyright]
+typeCheckingMode = "all"
+include = ["app", "tests", "export_openapi.py"]
+exclude = ["notebooks"]
+venvPath = "."
+venv = ".venv"
+executionEnvironments = [{ root = ".", extraPaths = ["."] }]
