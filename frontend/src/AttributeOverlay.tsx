@@ -5,7 +5,7 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
-import type { Attribute, TravelMode } from "@/types/global.ts";
+import type { OverlayAttribute, TransportMode } from "@/types/global.ts";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listLayersLayersGetOptions } from "@/client/@tanstack/react-query.gen.ts";
@@ -15,8 +15,8 @@ import type { Feature } from "geojson";
 import L from "leaflet";
 
 interface AttributeOverlayProps {
-  attribute: Attribute;
-  travelMode: TravelMode;
+  overlayAttribute: OverlayAttribute;
+  transportMode: TransportMode;
 }
 
 const boundsToBbox = (map: L.Map) => {
@@ -26,8 +26,8 @@ const boundsToBbox = (map: L.Map) => {
 };
 
 export const AttributeOverlay = ({
-  attribute,
-  travelMode,
+  overlayAttribute,
+  transportMode,
 }: AttributeOverlayProps) => {
   const map = useMap();
 
@@ -45,8 +45,8 @@ export const AttributeOverlay = ({
   const layerQuery = useQuery({
     ...listLayersLayersGetOptions({
       query: {
-        overlay_attribute: attribute,
-        transport_mode: travelMode,
+        overlay_attribute: overlayAttribute,
+        transport_mode: transportMode,
         bounding_box: bbox,
         minimum_value: 0.01,
         max_features: 20000,
@@ -59,7 +59,7 @@ export const AttributeOverlay = ({
   const style = useMemo(() => {
     let color = "#ffffff";
 
-    switch (attribute) {
+    switch (overlayAttribute) {
       case "snow":
         color = "#fa4561";
         break;
@@ -82,7 +82,7 @@ export const AttributeOverlay = ({
         opacity,
       };
     };
-  }, [attribute]);
+  }, [overlayAttribute]);
 
   if (layerQuery.isLoading || !layerQuery.data) {
     return null;
@@ -91,7 +91,7 @@ export const AttributeOverlay = ({
   return (
     <FeatureGroup>
       <Popup>
-        <Text>{attribute}</Text>
+        <Text>{overlayAttribute}</Text>
       </Popup>
       <GeoJSON data={toGeoJsonObject(layerQuery.data)} style={style} />
     </FeatureGroup>

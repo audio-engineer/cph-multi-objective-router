@@ -23,16 +23,16 @@ import {
   getCurrentBoundaryBoundariesCurrentGetOptions,
   reverseGeocodeGeocodingReverseGetOptions,
 } from "@/client/@tanstack/react-query.gen.ts";
-import type { TravelMode } from "@/types/global.ts";
+import type { TransportMode } from "@/types/global.ts";
 import { toTurfFeature } from "@/utils.ts";
 
-type MarkerKind = "start" | "end";
+type MarkerKind = "origin" | "destination";
 type MarkerSource = "drag" | "pick";
 type LastSearch =
-  | { source: "address"; from: string; to: string }
-  | { source: "coords"; start: Point; end: Point };
-export type Mode = "fastest" | "advanced";
-export type Method = "weighted" | "pareto";
+  | { source: "address"; origin: string; destination: string }
+  | { source: "coords"; origin: Point; destination: Point };
+export type Mode = "shortest" | "advanced";
+export type RouteSelectionMethod = "shortest" | "weighted" | "pareto";
 
 const inBoundsBbox = (
   point: Point,
@@ -94,8 +94,10 @@ const App = () => {
   );
 
   const [pickMode, setPickMode] = useState<PickMode>(null);
-  const [startPos, setStartPos] = useState<Point | null>(null);
-  const [endPos, setEndPos] = useState<Point | null>(null);
+  const [originPosition, setOriginPosition] = useState<Point | null>(null);
+  const [destinationPosition, setDestinationPosition] = useState<Point | null>(
+    null,
+  );
 
   const routePanelRef = useRef<RoutePanelHandle>(null);
 
@@ -103,10 +105,10 @@ const App = () => {
   const [statusColor, setStatusColor] = useState<MantineColor>("green");
   const statusTimeoutRef = useRef<number | null>(null);
 
-  const [travelMode, setTravelMode] = useState<TravelMode>("walk");
+  const [transportMode, setTransportMode] = useState<TransportMode>("walk");
 
-  const [mode, setMode] = useState<Mode>("fastest");
-  const [method, setMethod] = useState<Method>("weighted");
+  const [mode, setMode] = useState<Mode>("shortest");
+  const [method, setMethod] = useState<RouteSelectionMethod>("shortest");
   const [scenic, setScenic] = useState(0);
   const [snow, setSnow] = useState(0);
   const [uphill, setUphill] = useState(0);
@@ -153,13 +155,13 @@ const App = () => {
         return;
       }
 
-      if (kind === "start") {
-        routePanelRef.current?.setFrom(data.address);
+      if (kind === "origin") {
+        routePanelRef.current?.setOrigin(data.address);
 
         return;
       }
 
-      routePanelRef.current?.setTo(data.address);
+      routePanelRef.current?.setDestination(data.address);
     } catch (error) {
       setStatusWithTtl(getErrorMessage(error), "red", 5000);
     }
@@ -172,8 +174,8 @@ const App = () => {
     setDistance(properties.distance);
     setSteps(properties.steps);
     setSelectedStepIndex(null);
-    setStartPos(data.meta.origin);
-    setEndPos(data.meta.destination);
+    setOriginPosition(data.meta.origin);
+    setDestinationPosition(data.meta.destination);
 
     setStatusWithTtl("Ready.", "green", 500);
   };
@@ -202,14 +204,18 @@ const App = () => {
 
   const loading = routeAddressMutation.isPending;
 
-  const searchByAddress = async (from: string, to: string) => {
-    lastSearchRef.current = { source: "address", from, to };
+  const searchByAddress = async (origin: string, destination: string) => {
+    lastSearchRef.current = {
+      source: "address",
+      origin,
+      destination,
+    };
 
     await routeAddressMutation.mutateAsync({
       body: {
-        transport_mode: travelMode,
-        origin: from,
-        destination: to,
+        transport_mode: transportMode,
+        origin,
+        destination,
         route_options: {
           route_selection_method: method,
           objective_weights: {
@@ -222,15 +228,19 @@ const App = () => {
     });
   };
 
-  const searchByCoords = async (start: Point, end: Point) => {
-    lastSearchRef.current = { source: "coords", start, end };
+  const searchByCoords = async (origin: Point, destination: Point) => {
+    lastSearchRef.current = {
+      source: "coords",
+      origin,
+      destination,
+    };
 
     try {
       await routeCoordinatesMutation.mutateAsync({
         body: {
-          transport_mode: travelMode,
-          origin: start,
-          destination: end,
+          transport_mode: transportMode,
+          origin,
+          destination,
           route_options: {
             route_selection_method: method,
             objective_weights: {
@@ -248,8 +258,8 @@ const App = () => {
     }
   };
 
-  const handleTravelModeChange = (mode: TravelMode) => {
-    setTravelMode(mode);
+  const handleTransportModeChange = (transportMode: TransportMode) => {
+    setTransportMode(transportMode);
 
     const lastSearch = lastSearchRef.current;
 
@@ -260,9 +270,9 @@ const App = () => {
     if (lastSearch.source === "address") {
       void routeAddressMutation.mutateAsync({
         body: {
-          transport_mode: mode,
-          origin: lastSearch.from,
-          destination: lastSearch.to,
+          transport_mode: transportMode,
+          origin: lastSearch.origin,
+          destination: lastSearch.destination,
         },
       });
 
@@ -271,9 +281,9 @@ const App = () => {
 
     void routeCoordinatesMutation.mutateAsync({
       body: {
-        transport_mode: mode,
-        origin: lastSearch.start,
-        destination: lastSearch.end,
+        transport_mode: transportMode,
+        origin: lastSearch.origin,
+        destination: lastSearch.destination,
       },
     });
   };
@@ -303,27 +313,27 @@ const App = () => {
   };
 
   const getMarkerPosition = (kind: MarkerKind) =>
-    kind === "start" ? startPos : endPos;
+    kind === "origin" ? originPosition : destinationPosition;
 
   const setMarkerPosition = (kind: MarkerKind, point: Point | null) => {
-    if (kind === "start") {
-      setStartPos(point);
+    if (kind === "origin") {
+      setOriginPosition(point);
 
       return;
     }
 
-    setEndPos(point);
+    setDestinationPosition(point);
   };
 
   const getOtherMarkerPosition = (kind: MarkerKind) =>
-    kind === "start" ? endPos : startPos;
+    kind === "origin" ? destinationPosition : originPosition;
 
   const applyMarkerUpdate = async (
     kind: MarkerKind,
     position: Point,
     source: MarkerSource,
   ) => {
-    const markerName = kind === "start" ? "Start" : "End";
+    const markerName = kind === "origin" ? "Origin" : "Destination";
 
     if (!boundary || !isInsideBoundary(position, boundary)) {
       setStatusWithTtl(
@@ -349,10 +359,10 @@ const App = () => {
       return true;
     }
 
-    const start = kind === "start" ? position : otherMarkerPosition;
-    const end = kind === "end" ? position : otherMarkerPosition;
+    const origin = kind === "origin" ? position : otherMarkerPosition;
+    const destination = kind === "destination" ? position : otherMarkerPosition;
 
-    const ok = await searchByCoords(start, end);
+    const ok = await searchByCoords(origin, destination);
 
     if (ok) {
       return true;
@@ -365,29 +375,32 @@ const App = () => {
     return false;
   };
 
-  const onStartDragged = async (pos: Point) =>
-    applyMarkerUpdate("start", pos, "drag");
+  const onOriginDragged = async (position: Point) =>
+    applyMarkerUpdate("origin", position, "drag");
 
-  const onEndDragged = async (pos: Point) =>
-    applyMarkerUpdate("end", pos, "drag");
+  const onDestinationDragged = async (position: Point) =>
+    applyMarkerUpdate("destination", position, "drag");
 
-  const onPickStart = async (pos: Point) =>
-    applyMarkerUpdate("start", pos, "pick");
+  const onPickOrigin = async (position: Point) =>
+    applyMarkerUpdate("origin", position, "pick");
 
-  const onPickEnd = async (pos: Point) => applyMarkerUpdate("end", pos, "pick");
+  const onPickDestination = async (position: Point) =>
+    applyMarkerUpdate("destination", position, "pick");
 
-  const onTogglePickStart = () => {
-    setPickMode((pickMode) => (pickMode === "start" ? null : "start"));
+  const onTogglePickOrigin = () => {
+    setPickMode((pickMode) => (pickMode === "origin" ? null : "origin"));
   };
 
-  const onTogglePickEnd = () => {
-    setPickMode((pickMode) => (pickMode === "end" ? null : "end"));
+  const onTogglePickDestination = () => {
+    setPickMode((pickMode) =>
+      pickMode === "destination" ? null : "destination",
+    );
   };
 
-  const clearAll = () => {
+  const handleClearAll = () => {
     setPickMode(null);
-    setStartPos(null);
-    setEndPos(null);
+    setOriginPosition(null);
+    setDestinationPosition(null);
     setRoute(undefined);
     setDistance(null);
     setSteps(null);
@@ -400,18 +413,21 @@ const App = () => {
   };
 
   useEffect(() => {
-    if (pickMode === "start") {
-      setStatusWithTtl("Click on the map to place the start marker.", "grape");
+    if (pickMode === "origin") {
+      setStatusWithTtl("Click on the map to place the origin marker.", "grape");
     }
 
-    if (pickMode === "end") {
-      setStatusWithTtl("Click on the map to place the end marker.", "grape");
+    if (pickMode === "destination") {
+      setStatusWithTtl(
+        "Click on the map to place the destination marker.",
+        "grape",
+      );
     }
 
     if (!pickMode) {
       // setStatusWithTtl("Ready.", "green");
     }
-  }, [endPos, pickMode, startPos]);
+  }, [destinationPosition, pickMode, originPosition]);
 
   if (boundaryLoading) {
     return (
@@ -462,16 +478,16 @@ const App = () => {
       <Map
         boundary={boundary}
         route={route}
-        startPosition={startPos}
-        endPosition={endPos}
-        onStartDragged={onStartDragged}
-        onEndDragged={onEndDragged}
+        originPosition={originPosition}
+        destinationPosition={destinationPosition}
+        onOriginDragged={onOriginDragged}
+        onDestinationDragged={onDestinationDragged}
         steps={steps}
         selectedStepIndex={selectedStepIndex}
         pickMode={pickMode}
-        onPickStart={onPickStart}
-        onPickEnd={onPickEnd}
-        travelMode={travelMode}
+        onPickOrigin={onPickOrigin}
+        onPickDestination={onPickDestination}
+        transportMode={transportMode}
       />
       <RoutePanel
         ref={routePanelRef}
@@ -481,14 +497,14 @@ const App = () => {
         steps={steps}
         selectedStepIndex={selectedStepIndex}
         onSelectStepIndex={setSelectedStepIndex}
-        onTogglePickStart={onTogglePickStart}
-        onTogglePickEnd={onTogglePickEnd}
+        onTogglePickOrigin={onTogglePickOrigin}
+        onTogglePickDestination={onTogglePickDestination}
         pickMode={pickMode}
-        hasStartMarker={startPos !== null}
-        hasEndMarker={endPos !== null}
-        onClearAll={clearAll}
-        travelMode={travelMode}
-        setTravelMode={handleTravelModeChange}
+        hasOriginMarker={originPosition !== null}
+        hasDestinationMarker={destinationPosition !== null}
+        onClearAll={handleClearAll}
+        transportMode={transportMode}
+        setTransportMode={handleTransportModeChange}
         mode={mode}
         setMode={setMode}
         method={method}

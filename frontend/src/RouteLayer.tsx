@@ -4,11 +4,11 @@ import L from "leaflet";
 import type { RouteFeatureCollection } from "@/client";
 import { fitBoundsRightOfPanel, toGeoJsonObject } from "@/utils.ts";
 
-export const RouteLayer = ({
-  route,
-}: {
+interface RouteLayerProps {
   route: RouteFeatureCollection | undefined;
-}) => {
+}
+
+export const RouteLayer = ({ route }: RouteLayerProps) => {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON>(null);
 

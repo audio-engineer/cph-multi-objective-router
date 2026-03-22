@@ -9,7 +9,7 @@ import {
   ZoomControl,
 } from "react-leaflet";
 import { RouteLayer } from "@/RouteLayer.tsx";
-import { StartEndMarkers } from "@/StartEndMarkers.tsx";
+import { OriginDestinationMarkers } from "@/OriginDestinationMarkers.tsx";
 import { SelectedSegment } from "@/SelectedSegment.tsx";
 import type {
   BoundaryFeatureCollection,
@@ -25,21 +25,21 @@ import type { PickMode } from "@/RoutePanel.tsx";
 import { MarkerPickController } from "@/MarkerPickController.tsx";
 import { basePadding, leftMargin } from "@/constants.ts";
 import { AttributeOverlay } from "@/AttributeOverlay.tsx";
-import type { TravelMode } from "@/types/global.ts";
+import type { TransportMode } from "@/types/global.ts";
 
 interface MapProps {
   boundary: BoundaryFeatureCollection;
   route: RouteFeatureCollection | undefined;
-  startPosition: Point | null;
-  endPosition: Point | null;
-  onStartDragged: (pos: Point) => Promise<boolean>;
-  onEndDragged: (pos: Point) => Promise<boolean>;
+  originPosition: Point | null;
+  destinationPosition: Point | null;
+  onOriginDragged: (position: Point) => Promise<boolean>;
+  onDestinationDragged: (position: Point) => Promise<boolean>;
   steps: RouteStepResponse[] | null;
   selectedStepIndex: number | null;
   pickMode: PickMode;
-  onPickStart: (point: Point) => Promise<boolean>;
-  onPickEnd: (point: Point) => Promise<boolean>;
-  travelMode: TravelMode;
+  onPickOrigin: (point: Point) => Promise<boolean>;
+  onPickDestination: (point: Point) => Promise<boolean>;
+  transportMode: TransportMode;
 }
 
 const extractOuterRingsAsHoles = (
@@ -65,16 +65,16 @@ const extractOuterRingsAsHoles = (
 export const Map = ({
   boundary,
   route,
-  startPosition,
-  endPosition,
-  onStartDragged,
-  onEndDragged,
+  originPosition,
+  destinationPosition,
+  onOriginDragged,
+  onDestinationDragged,
   steps,
   selectedStepIndex,
   pickMode,
-  onPickStart,
-  onPickEnd,
-  travelMode,
+  onPickOrigin,
+  onPickDestination,
+  transportMode,
 }: MapProps) => {
   const [minLong, minLat, maxLong, maxLat] = boundary.meta.bounds;
   const initialBounds = L.latLngBounds([minLat, minLong], [maxLat, maxLong]);
@@ -162,14 +162,14 @@ export const Map = ({
         />
         <MarkerPickController
           pickMode={pickMode}
-          onPickStart={onPickStart}
-          onPickEnd={onPickEnd}
+          onPickOrigin={onPickOrigin}
+          onPickDestination={onPickDestination}
         />
-        <StartEndMarkers
-          start={startPosition}
-          end={endPosition}
-          onStartDragEnd={onStartDragged}
-          onEndDragEnd={onEndDragged}
+        <OriginDestinationMarkers
+          origin={originPosition}
+          destination={destinationPosition}
+          onOriginDragEnd={onOriginDragged}
+          onDestinationDragEnd={onDestinationDragged}
         />
         {/*<RouteLayer data={geoJson} />*/}
         {route && (
@@ -186,17 +186,26 @@ export const Map = ({
           </LayersControl.Overlay>
           <LayersControl.Overlay name="Snow">
             <LayerGroup>
-              <AttributeOverlay attribute="snow" travelMode={travelMode} />
+              <AttributeOverlay
+                overlayAttribute="snow"
+                transportMode={transportMode}
+              />
             </LayerGroup>
           </LayersControl.Overlay>
           <LayersControl.Overlay name="Scenic">
             <LayerGroup>
-              <AttributeOverlay attribute="scenic" travelMode={travelMode} />
+              <AttributeOverlay
+                overlayAttribute="scenic"
+                transportMode={transportMode}
+              />
             </LayerGroup>
           </LayersControl.Overlay>
           <LayersControl.Overlay name="Uphill">
             <LayerGroup>
-              <AttributeOverlay attribute="uphill" travelMode={travelMode} />
+              <AttributeOverlay
+                overlayAttribute="uphill"
+                transportMode={transportMode}
+              />
             </LayerGroup>
           </LayersControl.Overlay>
         </LayersControl>

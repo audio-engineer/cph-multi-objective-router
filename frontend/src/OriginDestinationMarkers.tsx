@@ -2,52 +2,57 @@ import { Marker, Popup } from "react-leaflet";
 import type { Point } from "@/client";
 import { type Marker as LeafletMarker } from "leaflet";
 
-export const StartEndMarkers = ({
-  start,
-  end,
-  onStartDragEnd,
-  onEndDragEnd,
-}: {
-  start: Point | null;
-  end: Point | null;
-  onStartDragEnd: (pos: Point) => Promise<boolean>;
-  onEndDragEnd: (pos: Point) => Promise<boolean>;
-}) => {
-  if (!start && !end) {
+interface OriginDestinationMarkersProps {
+  origin: Point | null;
+  destination: Point | null;
+  onOriginDragEnd: (position: Point) => Promise<boolean>;
+  onDestinationDragEnd: (position: Point) => Promise<boolean>;
+}
+
+export const OriginDestinationMarkers = ({
+  origin,
+  destination,
+  onOriginDragEnd,
+  onDestinationDragEnd,
+}: OriginDestinationMarkersProps) => {
+  if (!origin && !destination) {
     return null;
   }
 
   return (
     <>
-      {start && (
+      {origin && (
         <Marker
-          position={{ lng: start.coordinates[0], lat: start.coordinates[1] }}
+          position={{ lng: origin.coordinates[0], lat: origin.coordinates[1] }}
           draggable
           eventHandlers={{
             dragend: (dragEndEvent) => {
               const marker = dragEndEvent.target as LeafletMarker;
               const { lng, lat } = marker.getLatLng();
 
-              void onStartDragEnd({
+              void onOriginDragEnd({
                 type: "Point",
                 coordinates: [lng, lat] as [number, number],
               });
             },
           }}
         >
-          <Popup>Start</Popup>
+          <Popup>Origin</Popup>
         </Marker>
       )}
-      {end && (
+      {destination && (
         <Marker
-          position={{ lng: end.coordinates[0], lat: end.coordinates[1] }}
+          position={{
+            lng: destination.coordinates[0],
+            lat: destination.coordinates[1],
+          }}
           draggable
           eventHandlers={{
             dragend: (dragEndEvent) => {
               const marker = dragEndEvent.target as LeafletMarker;
               const { lng, lat } = marker.getLatLng();
 
-              void onEndDragEnd({
+              void onDestinationDragEnd({
                 type: "Point",
                 coordinates: [lng, lat] as [number, number],
               });

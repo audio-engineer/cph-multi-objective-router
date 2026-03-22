@@ -20,39 +20,37 @@ import { useForm } from "@mantine/form";
 import { IconQuestionMark, IconTrash } from "@tabler/icons-react";
 import type { RouteStepResponse } from "@/client";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png?url";
-import type { TravelMode } from "@/types/global.ts";
-import type { Method, Mode } from "@/App.tsx";
+import type { TransportMode } from "@/types/global.ts";
+import type { RouteSelectionMethod, Mode } from "@/App.tsx";
 
-export type PickMode = "start" | "end" | null;
+export type PickMode = "origin" | "destination" | null;
 
 export interface RoutePanelHandle {
-  setFrom: (from: string) => void;
-  clearFrom: () => void;
-  setTo: (to: string) => void;
-  clearTo: () => void;
+  setOrigin: (origin: string) => void;
+  setDestination: (destination: string) => void;
   clearAllFields: () => void;
 }
 
 interface RoutePanelProps {
   ref?: Ref<RoutePanelHandle>;
-  searchByAddress: (from: string, to: string) => Promise<void>;
+  searchByAddress: (origin: string, destination: string) => Promise<void>;
   loading: boolean;
   distance: number | null;
   steps: RouteStepResponse[] | null;
   selectedStepIndex: number | null;
   onSelectStepIndex: (index: number | null) => void;
-  onTogglePickStart: () => void;
-  onTogglePickEnd: () => void;
+  onTogglePickOrigin: () => void;
+  onTogglePickDestination: () => void;
   onClearAll: () => void;
-  hasStartMarker: boolean;
-  hasEndMarker: boolean;
+  hasOriginMarker: boolean;
+  hasDestinationMarker: boolean;
   pickMode: PickMode;
-  travelMode: TravelMode;
-  setTravelMode: (mode: TravelMode) => void;
+  transportMode: TransportMode;
+  setTransportMode: (transportMode: TransportMode) => void;
   mode: Mode;
   setMode: (mode: Mode) => void;
-  method: Method;
-  setMethod: (method: Method) => void;
+  method: RouteSelectionMethod;
+  setMethod: (method: RouteSelectionMethod) => void;
   setScenic: (scenic: number) => void;
   setSnow: (snow: number) => void;
   setUphill: (uphill: number) => void;
@@ -74,14 +72,14 @@ export const RoutePanel = ({
   steps,
   selectedStepIndex,
   onSelectStepIndex,
-  onTogglePickStart,
-  onTogglePickEnd,
-  hasStartMarker,
-  hasEndMarker,
+  onTogglePickOrigin,
+  onTogglePickDestination,
+  hasOriginMarker,
+  hasDestinationMarker,
   pickMode,
   onClearAll,
-  travelMode,
-  setTravelMode,
+  transportMode,
+  setTransportMode,
   mode,
   setMode,
   method,
@@ -93,35 +91,29 @@ export const RoutePanel = ({
   const form = useForm({
     mode: "uncontrolled",
     initialValues: {
-      from: "",
-      to: "",
+      origin: "",
+      destination: "",
     },
   });
 
   useImperativeHandle(
     ref,
     () => ({
-      setFrom: (from: string) => {
-        form.setFieldValue("from", from);
+      setOrigin: (origin: string) => {
+        form.setFieldValue("origin", origin);
       },
-      clearFrom: () => {
-        form.setFieldValue("from", "");
-      },
-      setTo: (to: string) => {
-        form.setFieldValue("to", to);
-      },
-      clearTo: () => {
-        form.setFieldValue("to", "");
+      setDestination: (destination: string) => {
+        form.setFieldValue("destination", destination);
       },
       clearAllFields: () => {
-        form.setFieldValue("from", "");
-        form.setFieldValue("to", "");
+        form.setFieldValue("origin", "");
+        form.setFieldValue("destination", "");
       },
     }),
     [form],
   );
 
-  const clearDisabled = !hasStartMarker && !hasEndMarker;
+  const clearDisabled = !hasOriginMarker && !hasDestinationMarker;
 
   return (
     <Paper
@@ -146,28 +138,28 @@ export const RoutePanel = ({
           <Tabs.Panel value="search">
             <form
               onSubmit={form.onSubmit((values) => {
-                void searchByAddress(values.from, values.to);
+                void searchByAddress(values.origin, values.destination);
               })}
             >
               <Group align="end" wrap="nowrap">
                 <TextInput
-                  label="From"
-                  placeholder="From"
+                  label="Origin"
+                  placeholder="Origin"
                   mt="md"
                   flex={1}
-                  key={form.key("from")}
-                  {...form.getInputProps("from")}
+                  key={form.key("origin")}
+                  {...form.getInputProps("origin")}
                 />
                 <Tooltip
-                  label="Pick start point on map"
+                  label="Pick origin point on map"
                   zIndex={2000}
                   withArrow
                 >
                   <ActionIcon
                     size="lg"
-                    variant={pickMode === "start" ? "filled" : "light"}
+                    variant={pickMode === "origin" ? "filled" : "light"}
                     // disabled={hasStartMarker}
-                    onClick={onTogglePickStart}
+                    onClick={onTogglePickOrigin}
                   >
                     <img
                       alt=""
@@ -179,19 +171,19 @@ export const RoutePanel = ({
               </Group>
               <Group align="end" wrap="nowrap">
                 <TextInput
-                  label="To"
-                  placeholder="To"
+                  label="Destination"
+                  placeholder="Destination"
                   mt="md"
                   flex={1}
-                  key={form.key("to")}
-                  {...form.getInputProps("to")}
+                  key={form.key("destination")}
+                  {...form.getInputProps("destination")}
                 />
                 <Tooltip label="Pick end point on map" zIndex={2000} withArrow>
                   <ActionIcon
                     size="lg"
-                    variant={pickMode === "end" ? "filled" : "light"}
+                    variant={pickMode === "destination" ? "filled" : "light"}
                     // disabled={hasEndMarker}
-                    onClick={onTogglePickEnd}
+                    onClick={onTogglePickDestination}
                   >
                     <img
                       alt=""
@@ -215,9 +207,9 @@ export const RoutePanel = ({
                 Transport
               </Text>
               <SegmentedControl
-                value={travelMode}
+                value={transportMode}
                 onChange={(tavelMode) => {
-                  setTravelMode(tavelMode as TravelMode);
+                  setTransportMode(tavelMode as TransportMode);
                 }}
                 fullWidth
                 data={[
@@ -241,10 +233,18 @@ export const RoutePanel = ({
                 value={mode}
                 onChange={(value) => {
                   setMode(value as Mode);
+
+                  if (value === "shortest") {
+                    setMethod(value as RouteSelectionMethod);
+                  }
+
+                  if (value === "advanced") {
+                    setMethod("weighted");
+                  }
                 }}
                 fullWidth
                 data={[
-                  { label: "Fastest", value: "fastest" },
+                  { label: "Shortest", value: "shortest" },
                   { label: "Advanced", value: "advanced" },
                 ]}
               />
@@ -253,7 +253,7 @@ export const RoutePanel = ({
                   <SegmentedControl
                     value={method}
                     onChange={(value) => {
-                      setMethod(value as Method);
+                      setMethod(value as RouteSelectionMethod);
                     }}
                     fullWidth
                     mt="md"
@@ -308,7 +308,9 @@ export const RoutePanel = ({
               )}
               <Button
                 mt="md"
-                disabled={loading || !form.values.from || !form.values.to}
+                disabled={
+                  loading || !form.values.origin || !form.values.destination
+                }
                 type="submit"
               >
                 {loading ? "Searching..." : "Search"}
