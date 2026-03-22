@@ -6,7 +6,7 @@ from typing import ClassVar, Literal
 from geojson_pydantic import LineString as PydanticLineString  # noqa: TC002
 from geojson_pydantic import MultiPolygon as PydanticMultiPolygon  # noqa: TC002
 from geojson_pydantic import Point as PydanticPoint  # noqa: TC002
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 TransportMode = Literal["bike", "walk"]
 OverlayAttribute = Literal["snow", "scenic", "uphill"]
@@ -33,17 +33,9 @@ class RouteComputationOptions(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
-    route_selection_method: RouteSelectionMethod = Field(
-        default="shortest",
-        validation_alias=AliasChoices(
-            "route_selection_method",
-            "route_method",
-            "method",
-        ),
-    )
+    route_selection_method: RouteSelectionMethod = Field(default="shortest")
     objective_weights: RouteObjectiveWeights = Field(
         default_factory=build_default_route_objective_weights,
-        validation_alias=AliasChoices("objective_weights", "weights"),
     )
 
     pareto_max_routes: int = Field(default=8, ge=1, le=25)
@@ -61,16 +53,11 @@ class CoordinateRouteRequest(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
-    transport_mode: TransportMode = Field(
-        validation_alias=AliasChoices("transport_mode", "travel_mode")
-    )
-    origin: PydanticPoint = Field(validation_alias=AliasChoices("origin", "start"))
-    destination: PydanticPoint = Field(
-        validation_alias=AliasChoices("destination", "end")
-    )
+    transport_mode: TransportMode
+    origin: PydanticPoint
+    destination: PydanticPoint
     route_options: RouteComputationOptions = Field(
-        default_factory=build_default_route_options,
-        validation_alias=AliasChoices("route_options", "options"),
+        default_factory=build_default_route_options
     )
 
 
@@ -79,14 +66,11 @@ class AddressRouteRequest(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
-    transport_mode: TransportMode = Field(
-        validation_alias=AliasChoices("transport_mode", "travel_mode")
-    )
-    origin: str = Field(validation_alias=AliasChoices("origin", "from"))
-    destination: str = Field(validation_alias=AliasChoices("destination", "to"))
+    transport_mode: TransportMode
+    origin: str
+    destination: str
     route_options: RouteComputationOptions = Field(
-        default_factory=build_default_route_options,
-        validation_alias=AliasChoices("route_options", "options"),
+        default_factory=build_default_route_options
     )
 
 
@@ -175,9 +159,7 @@ class BoundaryFeatureCollection(BaseModel):
 class LayerProperties(BaseModel):
     """Properties attached to a layer feature."""
 
-    overlay_attribute: OverlayAttribute = Field(
-        validation_alias=AliasChoices("overlay_attribute", "attribute")
-    )
+    overlay_attribute: OverlayAttribute
     value: float
 
 
