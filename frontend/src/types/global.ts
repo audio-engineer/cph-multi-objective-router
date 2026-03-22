@@ -1,2 +1,2 @@
-export type TravelMode = "bike" | "walk";
-export type Attribute = "snow" | "scenic" | "uphill";
+export type TransportMode = "bike" | "walk";
+export type OverlayAttribute = "snow" | "scenic" | "uphill";

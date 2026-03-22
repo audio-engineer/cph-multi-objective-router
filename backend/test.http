@@ -12,9 +12,9 @@ Content-Type: application/json
   "transport_mode": "bike",
   "origin": "Nørrebro",
   "destination": "Bispebjerg",
-  "options": {
-    "method": "weighted",
-    "weights": {
+  "route_options": {
+    "route_selection_method": "weighted",
+    "objective_weights": {
       "scenic": 40,
       "avoid_snow": 80,
       "avoid_uphill": 20
@@ -43,7 +43,7 @@ Content-Type: application/json
     ]
   },
   "route_options": {
-    "method": "shortest"
+    "route_selection_method": "shortest"
   }
 }
 

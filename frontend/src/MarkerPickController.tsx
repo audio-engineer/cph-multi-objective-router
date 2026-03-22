@@ -4,14 +4,14 @@ import { useMapEvents } from "react-leaflet";
 
 interface MarkerPickControllerProps {
   pickMode: PickMode;
-  onPickStart: (point: Point) => Promise<boolean>;
-  onPickEnd: (point: Point) => Promise<boolean>;
+  onPickOrigin: (point: Point) => Promise<boolean>;
+  onPickDestination: (point: Point) => Promise<boolean>;
 }
 
 export const MarkerPickController = ({
   pickMode,
-  onPickStart,
-  onPickEnd,
+  onPickOrigin,
+  onPickDestination,
 }: MarkerPickControllerProps) => {
   useMapEvents({
     click: (leafletMouseEvent) => {
@@ -27,13 +27,13 @@ export const MarkerPickController = ({
         ],
       };
 
-      if (pickMode === "start") {
-        void onPickStart(point);
+      if (pickMode === "origin") {
+        void onPickOrigin(point);
 
         return;
       }
 
-      void onPickEnd(point);
+      void onPickDestination(point);
     },
   });
 

@@ -4,7 +4,7 @@
     {
       "type": "Feature",
       "properties": {
-        "value": 0.2
+        "value": 1.0
       },
       "geometry": {
         "coordinates": [
