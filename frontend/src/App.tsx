@@ -211,7 +211,7 @@ const App = () => {
         origin: from,
         destination: to,
         route_options: {
-          route_selection_method: "weighted",
+          route_selection_method: method,
           objective_weights: {
             scenic,
             avoid_snow: snow,
@@ -232,7 +232,7 @@ const App = () => {
           origin: start,
           destination: end,
           route_options: {
-            route_selection_method: "weighted",
+            route_selection_method: method,
             objective_weights: {
               scenic,
               avoid_snow: snow,
