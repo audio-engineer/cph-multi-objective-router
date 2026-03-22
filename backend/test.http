@@ -41,8 +41,30 @@ Content-Type: application/json
       12.513641,
       55.663993
     ]
+  },
+  "route_options": {
+    "method": "shortest"
   }
 }
+
+### Get pareto routes by origin and destination address
+POST http://localhost:8000/routes/by-address
+Content-Type: application/json
+
+{
+  "transport_mode": "bike",
+  "origin": "Uglevej 23",
+  "destination": "Fiolstræde 38",
+  "route_options": {
+    "route_selection_method": "pareto",
+    "objective_weights": {
+      "scenic": 0,
+      "avoid_snow": 0,
+      "avoid_uphill": 0
+    }
+  }
+}
+
 
 ### Reverse geocode coordinates to approximate address
 GET http://localhost:8000/geocoding/reverse?longitude=12.538235&latitude=55.700772

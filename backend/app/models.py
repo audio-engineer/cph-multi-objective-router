@@ -99,11 +99,23 @@ class RouteStepResponse(BaseModel):
     segment_index_to: int
 
 
+class RouteObjectiveCostBreakdown(BaseModel):
+    """Objective-aligned route cost totals."""
+
+    distance: float
+    snow_penalty: float
+    uphill_penalty: float
+    scenic_penalty: float
+
+
 class RouteProperties(BaseModel):
     """Properties attached to a route feature."""
 
     distance: float = Field(description="Route distance in metres")
     steps: list[RouteStepResponse]
+    objective_costs: RouteObjectiveCostBreakdown | None = None
+    pareto_rank: int | None = None
+    selection_score: float | None = None
 
 
 class RouteFeature(BaseModel):
@@ -119,6 +131,9 @@ class RouteMeta(BaseModel):
 
     origin: PydanticPoint
     destination: PydanticPoint
+    route_selection_method: RouteSelectionMethod
+    route_count: int
+    recommended_route_index: int
 
 
 class RouteFeatureCollection(BaseModel):
@@ -214,3 +229,16 @@ class RouteCoordinates:
     origin_latitude: float
     destination_longitude: float
     destination_latitude: float
+
+
+type RouteCostVector = tuple[float, float, float, float]
+
+
+@dataclass(slots=True)
+class ParetoPathLabel:
+    """A label in the Martins multi-objective shortest-path search."""
+
+    node_id: int
+    cost_vector: RouteCostVector
+    previous_label_id: int | None
+    previous_edge_key: tuple[int, int, int] | None
