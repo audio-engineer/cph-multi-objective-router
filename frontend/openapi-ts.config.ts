@@ -1,4 +1,4 @@
-import { defineConfig } from "@hey-api/openapi-ts";
+import { defineConfig, defaultPlugins } from "@hey-api/openapi-ts";
 
 export default defineConfig({
   input: "../backend/openapi.json",
@@ -7,10 +7,7 @@ export default defineConfig({
     postProcess: ["prettier"],
   },
   plugins: [
-    {
-      name: "@hey-api/typescript",
-      enums: "javascript",
-    },
+    ...defaultPlugins,
     "@hey-api/client-axios",
     "@tanstack/react-query",
   ],
