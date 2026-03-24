@@ -102,7 +102,7 @@ const App = () => {
   const routePanelRef = useRef<RoutePanelHandle>(null);
 
   const [status, setStatus] = useState("Ready.");
-  const [statusColor, setStatusColor] = useState<MantineColor>("green");
+  const [statusColor, setStatusColor] = useState("green");
   const statusTimeoutRef = useRef<number | null>(null);
 
   const [transportMode, setTransportMode] = useState<TransportMode>("walk");

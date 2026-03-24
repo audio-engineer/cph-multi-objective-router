@@ -18,7 +18,7 @@
     "@mantine/form": "^8.3.18",
     "@mantine/hooks": "^8.3.18",
     "@tabler/icons-react": "^3.40.0",
-    "@tanstack/react-query": "^5.95.0",
+    "@tanstack/react-query": "^5.95.2",
     "@turf/boolean-point-in-polygon": "^7.3.4",
     "@turf/helpers": "^7.3.4",
     "axios": "^1.13.6",
@@ -32,7 +32,7 @@
     "@eslint/js": "^9.39.4",
     "@hey-api/openapi-ts": "0.94.4",
     "@rolldown/plugin-babel": "^0.2.2",
-    "@tanstack/eslint-plugin-query": "^5.95.0",
+    "@tanstack/eslint-plugin-query": "^5.95.2",
     "@types/babel__core": "^7.20.5",
     "@types/geojson": "^7946.0.16",
     "@types/leaflet": "^1.9.21",
@@ -53,8 +53,8 @@
     "postcss-simple-vars": "^7.0.1",
     "prettier": "3.8.1",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.57.1",
-    "vite": "^8.0.1"
+    "typescript-eslint": "^8.57.2",
+    "vite": "^8.0.2"
   },
   "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be"
 }
