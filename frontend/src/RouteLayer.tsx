@@ -1,36 +1,28 @@
-import { useEffect, useRef } from "react";
-import { useMap } from "react-leaflet";
 import L from "leaflet";
+import { Polyline } from "react-leaflet";
 import type { RouteFeatureCollection } from "@/client";
-import { fitBoundsRightOfPanel, toGeoJsonObject } from "@/utils.ts";
+import { getRouteColor } from "@/utils.ts";
 
 interface RouteLayerProps {
-  route: RouteFeatureCollection | undefined;
+  routes: RouteFeatureCollection | undefined;
 }
 
-export const RouteLayer = ({ route }: RouteLayerProps) => {
-  const map = useMap();
-  const layerRef = useRef<L.GeoJSON>(null);
+export const RouteLayer = ({ routes }: RouteLayerProps) => {
+  if (!routes) {
+    return null;
+  }
 
-  useEffect(() => {
-    layerRef.current ??= L.geoJSON(undefined, {
-      style: { weight: 5, opacity: 0.9 },
-    }).addTo(map);
-
-    const layer = layerRef.current;
-
-    layer.clearLayers();
-
-    if (route) {
-      layer.addData(toGeoJsonObject(route));
-
-      const bounds = layer.getBounds();
-
-      if (bounds.isValid()) {
-        fitBoundsRightOfPanel(map, bounds);
-      }
-    }
-  }, [route, map]);
-
-  return null;
+  return routes.features.map((route) => (
+    <Polyline
+      key={route.properties.route_index}
+      positions={route.geometry.coordinates.map((position) =>
+        L.latLng(position[1], position[0]),
+      )}
+      pathOptions={{
+        color: getRouteColor(route.properties.route_index),
+        weight: 5,
+        opacity: 0.9,
+      }}
+    />
+  ));
 };

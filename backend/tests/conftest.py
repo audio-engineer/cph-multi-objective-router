@@ -38,7 +38,7 @@ def dummy_route_feature_collection() -> RouteFeatureCollection:
         features=[
             RouteFeature(
                 type="Feature",
-                properties=RouteProperties(distance=100.0, steps=[]),
+                properties=RouteProperties(route_index=0, distance=100.0, steps=[]),
                 geometry=PydanticLineString(
                     type="LineString",
                     coordinates=[origin, destination],

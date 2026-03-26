@@ -7,8 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { Map } from "@/Map.tsx";
 import type {
   RouteFeatureCollection,
+  RouteFeature,
   Point,
-  RouteStepResponse,
   BoundaryFeatureCollection,
 } from "@/client";
 import { StatusBar } from "@/StatusBar.tsx";
@@ -86,9 +86,10 @@ const getErrorMessage = (error: unknown) => {
 const App = () => {
   const [minBoundaryDelayDone, setMinBoundaryDelayDone] = useState(false);
 
-  const [route, setRoute] = useState<RouteFeatureCollection>();
-  const [distance, setDistance] = useState<number | null>(null);
-  const [steps, setSteps] = useState<RouteStepResponse[] | null>(null);
+  const [routes, setRoutes] = useState<RouteFeatureCollection>();
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(
+    null,
+  );
   const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(
     null,
   );
@@ -167,12 +168,18 @@ const App = () => {
     }
   };
 
-  const routeMutationSuccess = (data: RouteFeatureCollection) => {
-    const properties = data.features[0].properties;
+  const buildRouteOptions = () => ({
+    route_selection_method: method,
+    objective_weights: {
+      scenic,
+      avoid_snow: snow,
+      avoid_uphill: uphill,
+    },
+  });
 
-    setRoute(data);
-    setDistance(properties.distance);
-    setSteps(properties.steps);
+  const routeMutationSuccess = (data: RouteFeatureCollection) => {
+    setRoutes(data);
+    setSelectedRouteIndex(null);
     setSelectedStepIndex(null);
     setOriginPosition(data.meta.origin);
     setDestinationPosition(data.meta.destination);
@@ -202,7 +209,8 @@ const App = () => {
     },
   });
 
-  const loading = routeAddressMutation.isPending;
+  const loading =
+    routeAddressMutation.isPending || routeCoordinatesMutation.isPending;
 
   const searchByAddress = async (origin: string, destination: string) => {
     lastSearchRef.current = {
@@ -216,14 +224,7 @@ const App = () => {
         transport_mode: transportMode,
         origin,
         destination,
-        route_options: {
-          route_selection_method: method,
-          objective_weights: {
-            scenic,
-            avoid_snow: snow,
-            avoid_uphill: uphill,
-          },
-        },
+        route_options: buildRouteOptions(),
       },
     });
   };
@@ -241,14 +242,7 @@ const App = () => {
           transport_mode: transportMode,
           origin,
           destination,
-          route_options: {
-            route_selection_method: method,
-            objective_weights: {
-              scenic,
-              avoid_snow: snow,
-              avoid_uphill: uphill,
-            },
-          },
+          route_options: buildRouteOptions(),
         },
       });
 
@@ -273,6 +267,7 @@ const App = () => {
           transport_mode: transportMode,
           origin: lastSearch.origin,
           destination: lastSearch.destination,
+          route_options: buildRouteOptions(),
         },
       });
 
@@ -284,6 +279,7 @@ const App = () => {
         transport_mode: transportMode,
         origin: lastSearch.origin,
         destination: lastSearch.destination,
+        route_options: buildRouteOptions(),
       },
     });
   };
@@ -401,9 +397,8 @@ const App = () => {
     setPickMode(null);
     setOriginPosition(null);
     setDestinationPosition(null);
-    setRoute(undefined);
-    setDistance(null);
-    setSteps(null);
+    setRoutes(undefined);
+    setSelectedRouteIndex(null);
     setSelectedStepIndex(null);
 
     lastSearchRef.current = null;
@@ -473,16 +468,21 @@ const App = () => {
     );
   }
 
+  const selectedRoute: RouteFeature | null =
+    routes && selectedRouteIndex != null
+      ? (routes.features[selectedRouteIndex] ?? null)
+      : null;
+
   return (
     <div style={{ height: "100vh", width: "100%" }}>
       <Map
         boundary={boundary}
-        route={route}
+        routes={routes}
+        selectedRouteIndex={selectedRouteIndex}
         originPosition={originPosition}
         destinationPosition={destinationPosition}
         onOriginDragged={onOriginDragged}
         onDestinationDragged={onDestinationDragged}
-        steps={steps}
         selectedStepIndex={selectedStepIndex}
         pickMode={pickMode}
         onPickOrigin={onPickOrigin}
@@ -492,9 +492,18 @@ const App = () => {
       <RoutePanel
         ref={routePanelRef}
         searchByAddress={searchByAddress}
-        distance={distance}
+        routes={routes}
         loading={loading}
-        steps={steps}
+        selectedRouteIndex={selectedRouteIndex}
+        onSelectRouteIndex={(routeIndex) => {
+          setSelectedRouteIndex(routeIndex);
+          setSelectedStepIndex(null);
+        }}
+        onBackToRouteList={() => {
+          setSelectedRouteIndex(null);
+          setSelectedStepIndex(null);
+        }}
+        selectedRoute={selectedRoute}
         selectedStepIndex={selectedStepIndex}
         onSelectStepIndex={setSelectedStepIndex}
         onTogglePickOrigin={onTogglePickOrigin}
@@ -509,8 +518,11 @@ const App = () => {
         setMode={setMode}
         method={method}
         setMethod={setMethod}
+        snow={snow}
         setSnow={setSnow}
+        scenic={scenic}
         setScenic={setScenic}
+        uphill={uphill}
         setUphill={setUphill}
       />
       <StatusBar message={status} color={statusColor} />

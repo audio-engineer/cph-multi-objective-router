@@ -95,6 +95,7 @@ class RouteObjectiveCostBreakdown(BaseModel):
 class RouteProperties(BaseModel):
     """Properties attached to a route feature."""
 
+    route_index: int = Field(description="Zero-based route index within the response")
     distance: float = Field(description="Route distance in metres")
     steps: list[RouteStepResponse]
     objective_costs: RouteObjectiveCostBreakdown | None = None
