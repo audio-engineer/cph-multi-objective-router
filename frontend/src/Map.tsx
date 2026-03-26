@@ -14,8 +14,8 @@ import { SelectedSegment } from "@/SelectedSegment.tsx";
 import type {
   BoundaryFeatureCollection,
   RouteFeatureCollection,
+  RouteFeature,
   Point,
-  RouteStepResponse,
   MultiPolygon,
 } from "@/client";
 import type { FeatureCollection } from "geojson";
@@ -29,12 +29,12 @@ import type { TransportMode } from "@/types/global.ts";
 
 interface MapProps {
   boundary: BoundaryFeatureCollection;
-  route: RouteFeatureCollection | undefined;
+  routes: RouteFeatureCollection | undefined;
+  selectedRouteIndex: number | null;
   originPosition: Point | null;
   destinationPosition: Point | null;
   onOriginDragged: (position: Point) => Promise<boolean>;
   onDestinationDragged: (position: Point) => Promise<boolean>;
-  steps: RouteStepResponse[] | null;
   selectedStepIndex: number | null;
   pickMode: PickMode;
   onPickOrigin: (point: Point) => Promise<boolean>;
@@ -64,12 +64,12 @@ const extractOuterRingsAsHoles = (
 
 export const Map = ({
   boundary,
-  route,
+  routes,
+  selectedRouteIndex,
   originPosition,
   destinationPosition,
   onOriginDragged,
   onDestinationDragged,
-  steps,
   selectedStepIndex,
   pickMode,
   onPickOrigin,
@@ -79,8 +79,23 @@ export const Map = ({
   const [minLong, minLat, maxLong, maxLat] = boundary.meta.bounds;
   const initialBounds = L.latLngBounds([minLat, minLong], [maxLat, maxLong]);
 
+  const selectedRoute: RouteFeature | null =
+    routes && selectedRouteIndex != null
+      ? (routes.features[selectedRouteIndex] ?? null)
+      : null;
+
+  const visibleRoutes =
+    routes && selectedRoute
+      ? {
+          ...routes,
+          features: [selectedRoute],
+        }
+      : routes;
+
   const selectedStep =
-    steps && selectedStepIndex != null ? steps[selectedStepIndex] : null;
+    selectedRoute && selectedStepIndex != null
+      ? (selectedRoute.properties.steps[selectedStepIndex] ?? null)
+      : null;
 
   const maskGeoJson = useMemo<FeatureCollection | null>(() => {
     if (boundary.features.length === 0) {
@@ -157,7 +172,7 @@ export const Map = ({
           })}
         />
         <RouteBoundsController
-          route={route}
+          route={visibleRoutes}
           selectedStepIndex={selectedStepIndex}
         />
         <MarkerPickController
@@ -172,16 +187,16 @@ export const Map = ({
           onDestinationDragEnd={onDestinationDragged}
         />
         {/*<RouteLayer data={geoJson} />*/}
-        {route && (
+        {selectedRoute && (
           <SelectedSegment
-            lineString={route.features[0].geometry}
+            lineString={selectedRoute.geometry}
             step={selectedStep}
           />
         )}
         <LayersControl position="bottomright">
           <LayersControl.Overlay checked name="Route">
             <LayerGroup>
-              <RouteLayer route={route} />
+              <RouteLayer routes={visibleRoutes} />
             </LayerGroup>
           </LayersControl.Overlay>
           <LayersControl.Overlay name="Snow">

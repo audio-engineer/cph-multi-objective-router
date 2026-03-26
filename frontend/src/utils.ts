@@ -6,7 +6,7 @@ import type {
   RouteFeatureCollection,
 } from "@/client";
 import L from "leaflet";
-import { basePadding, leftMargin } from "@/constants.ts";
+import { basePadding, leftMargin, routeColors } from "@/constants.ts";
 
 export const toGeoJsonObject = (
   featureCollection:
@@ -57,3 +57,6 @@ export const fitBoundsRightOfPanel = (
     maxZoom: 18,
   });
 };
+
+export const getRouteColor = (routeIndex: number) =>
+  routeColors[routeIndex % routeColors.length];

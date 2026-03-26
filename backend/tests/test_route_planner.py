@@ -153,6 +153,7 @@ def test_build_route_feature_collection_success(
     )
 
     assert len(feature_collection.features) == 1
+    assert feature_collection.features[0].properties.route_index == 0
     assert feature_collection.features[0].properties.distance == 220.0
     assert feature_collection.meta.origin.coordinates[0] == 12.0
     assert feature_collection.meta.destination.coordinates[0] == 12.2
@@ -209,9 +210,11 @@ def test_build_route_feature_collection_returns_pareto_routes(
     assert len(feature_collection.features) == 2
     assert feature_collection.meta.route_selection_method == "pareto"
     assert feature_collection.meta.route_count == 2
+    assert feature_collection.features[0].properties.route_index == 0
     assert feature_collection.features[0].properties.pareto_rank == 1
     assert feature_collection.features[0].properties.steps[0].street == "Scenic Way"
     assert feature_collection.features[0].properties.objective_costs is not None
+    assert feature_collection.features[1].properties.route_index == 1
     assert feature_collection.features[1].properties.pareto_rank == 2
 
 

@@ -794,6 +794,8 @@ def build_route_objective_cost_breakdown(
 def build_route_feature(
     graph: MultiDiGraphAny,
     route_candidate: ResolvedRouteCandidate,
+    *,
+    route_index: int,
 ) -> RouteFeature:
     """Serialize one resolved route candidate into a GeoJSON route feature."""
     route_steps = build_route_steps_from_edges(route_candidate.segment_edge_attributes)
@@ -801,6 +803,7 @@ def build_route_feature(
     return RouteFeature(
         type="Feature",
         properties=RouteProperties(
+            route_index=route_index,
             distance=route_candidate.total_cost_vector[0],
             steps=build_route_step_responses(route_steps),
             objective_costs=build_route_objective_cost_breakdown(
@@ -875,8 +878,12 @@ def build_route_feature_collection(
     return RouteFeatureCollection(
         type="FeatureCollection",
         features=[
-            build_route_feature(graph, route_candidate)
-            for route_candidate in route_candidates
+            build_route_feature(
+                graph,
+                route_candidate,
+                route_index=route_index,
+            )
+            for route_index, route_candidate in enumerate(route_candidates)
         ],
         meta=RouteMeta(
             origin=_build_node_point(graph, origin_node_id),
