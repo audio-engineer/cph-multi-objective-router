@@ -12,7 +12,14 @@ import type {
   BoundaryFeatureCollection,
 } from "@/client";
 import { StatusBar } from "@/StatusBar.tsx";
-import { Button, Loader, type MantineColor, Text } from "@mantine/core";
+import {
+  Box,
+  Button,
+  Flex,
+  Loader,
+  type MantineColor,
+  Text,
+} from "@mantine/core";
 import { point as turfPoint } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -426,30 +433,20 @@ const App = () => {
 
   if (boundaryLoading) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-        }}
-      >
+      <Flex justify="center" align="center" h="100vh">
         <Loader />
-      </div>
+      </Flex>
     );
   }
 
   if (boundaryErrorMessage || !boundary) {
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-        }}
+      <Flex
+        h="100vh"
+        direction="column"
+        gap={12}
+        justify="center"
+        align="center"
       >
         <Text>Map boundary could not be loaded.</Text>
         {boundaryErrorMessage && (
@@ -464,7 +461,7 @@ const App = () => {
         >
           Retry
         </Button>
-      </div>
+      </Flex>
     );
   }
 
@@ -474,7 +471,7 @@ const App = () => {
       : null;
 
   return (
-    <div style={{ height: "100vh", width: "100%" }}>
+    <Box h="100vh" w="100%">
       <Map
         boundary={boundary}
         routes={routes}
@@ -526,7 +523,7 @@ const App = () => {
         setUphill={setUphill}
       />
       <StatusBar message={status} color={statusColor} />
-    </div>
+    </Box>
   );
 };
 

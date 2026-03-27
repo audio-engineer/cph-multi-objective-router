@@ -26,6 +26,7 @@ import { MarkerPickController } from "@/MarkerPickController.tsx";
 import { basePadding, leftMargin } from "@/constants.ts";
 import { AttributeOverlay } from "@/AttributeOverlay.tsx";
 import type { TransportMode } from "@/types/global.ts";
+import { Box } from "@mantine/core";
 
 interface MapProps {
   boundary: BoundaryFeatureCollection;
@@ -134,7 +135,7 @@ export const Map = ({
   }, [boundary]);
 
   return (
-    <div style={{ height: "100vh", width: "100%" }}>
+    <Box h="100vh" w="100%">
       <MapContainer
         bounds={initialBounds}
         boundsOptions={{
@@ -226,6 +227,6 @@ export const Map = ({
         </LayersControl>
         <ZoomControl position="bottomright" />
       </MapContainer>
-    </div>
+    </Box>
   );
 };
