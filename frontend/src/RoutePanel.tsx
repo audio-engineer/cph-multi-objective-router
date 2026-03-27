@@ -7,6 +7,7 @@ import {
   Divider,
   Flex,
   Group,
+  Image,
   Paper,
   ScrollArea,
   SegmentedControl,
@@ -263,12 +264,9 @@ export const RoutePanel = ({
                         {getRouteTitle(route, routeCount, method)}
                       </Text>
                       {recommendedRoute && (
-                        <Box
-                          ml="sm"
-                          style={{ display: "flex", alignItems: "center" }}
-                        >
+                        <Flex ml="sm" align="center">
                           <IconStarFilled size="1rem" color="gold" />
-                        </Box>
+                        </Flex>
                       )}
                     </Flex>
                     <Text size="sm" c="dimmed">
@@ -372,7 +370,7 @@ export const RoutePanel = ({
               variant={pickMode === "origin" ? "filled" : "light"}
               onClick={onTogglePickOrigin}
             >
-              <img alt="" src={markerIconUrl} width={12} height={20} />
+              <Image alt="" src={markerIconUrl} w={12} h={20} />
             </ActionIcon>
           </Tooltip>
         </Group>
@@ -391,7 +389,7 @@ export const RoutePanel = ({
               variant={pickMode === "destination" ? "filled" : "light"}
               onClick={onTogglePickDestination}
             >
-              <img alt="" src={markerIconUrl} width={12} height={20} />
+              <Image alt="" src={markerIconUrl} w={12} h={20} />
             </ActionIcon>
           </Tooltip>
         </Group>
