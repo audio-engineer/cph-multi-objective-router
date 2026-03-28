@@ -23,9 +23,14 @@ export default defineConfig([
   {
     languageOptions: {
       ecmaVersion: 2020,
-      globals: globals.browser,
       parserOptions: {
-        project: ["./tsconfig.app.json", "./tsconfig.eslint.json"],
+        projectService: {
+          allowDefaultProject: [
+            "eslint.config.mjs",
+            "postcss.config.cjs",
+            "openapi-ts.config.ts",
+          ],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -37,7 +42,14 @@ export default defineConfig([
     },
   },
   {
-    files: ["postcss.config.cjs"],
+    files: ["src/**/*.{ts,tsx}"],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+  {
+    files: ["eslint.config.mjs", "postcss.config.cjs", "openapi-ts.config.ts"],
+    extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: globals.node,
     },
