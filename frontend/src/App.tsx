@@ -182,6 +182,7 @@ const App = () => {
       avoid_snow: snow,
       avoid_uphill: uphill,
     },
+    pareto_max_routes: 3,
   });
 
   const routeMutationSuccess = (data: RouteFeatureCollection) => {
