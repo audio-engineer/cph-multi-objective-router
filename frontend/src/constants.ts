@@ -4,6 +4,7 @@ export const basePadding = 30;
  * Width of the route panel.
  */
 export const panelWidth = 360;
+export const statsPanelWidth = 460;
 
 /**
  * Left margin + route panel width + base padding.

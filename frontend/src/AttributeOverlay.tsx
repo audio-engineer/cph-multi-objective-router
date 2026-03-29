@@ -9,7 +9,7 @@ import type { OverlayAttribute, TransportMode } from "@/types/global.ts";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listLayersLayersGetOptions } from "@/client/@tanstack/react-query.gen.ts";
-import { toGeoJsonObject } from "@/utils.ts";
+import { capitalize, toGeoJsonObject } from "@/utils.ts";
 import { Text } from "@mantine/core";
 import type { Feature } from "geojson";
 import L from "leaflet";
@@ -91,10 +91,7 @@ export const AttributeOverlay = ({
   return (
     <FeatureGroup>
       <Popup>
-        <Text>
-          {overlayAttribute.charAt(0).toUpperCase() + overlayAttribute.slice(1)}{" "}
-          area
-        </Text>
+        <Text>{capitalize(overlayAttribute)} area</Text>
         {/*<Text>Intensity: {layerQuery.data.features[0].properties.value}/1</Text>*/}
       </Popup>
       <GeoJSON data={toGeoJsonObject(layerQuery.data)} style={style} />
