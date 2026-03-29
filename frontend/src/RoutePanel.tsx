@@ -5,7 +5,6 @@ import {
   Box,
   Button,
   Divider,
-  Flex,
   Group,
   Image,
   Paper,
@@ -16,6 +15,7 @@ import {
   Tabs,
   Text,
   TextInput,
+  Title,
   Tooltip,
   Transition,
   UnstyledButton,
@@ -36,8 +36,25 @@ import type {
 import markerIconUrl from "leaflet/dist/images/marker-icon.png?url";
 import type { TransportMode } from "@/types/global.ts";
 import type { RouteSelectionMethod, Mode } from "@/App.tsx";
+import {
+  buildRouteProgressionData,
+  estimateRouteDurationMinutes,
+  formatDuration,
+  getRouteComfortScores,
+  getRouteSpeedKmPerHour,
+  objectiveScoreLabels,
+} from "@/route-metrics.ts";
 import { getRouteColor } from "@/utils.ts";
 import { RouteStatsPanel } from "@/RouteStatsPanel.tsx";
+import {
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+  Legend,
+} from "recharts";
 
 export type PickMode = "origin" | "destination" | null;
 
@@ -95,7 +112,7 @@ const getRouteTitle = (
     const routeRank =
       route.properties.pareto_rank ?? route.properties.route_index + 1;
 
-    return `Alternative ${String(routeRank)}`;
+    return `Route ${String(routeRank)}`;
   }
 
   if (routeCount === 1) {
@@ -105,22 +122,52 @@ const getRouteTitle = (
   return `Route ${String(route.properties.route_index + 1)}`;
 };
 
-const getRouteSubtitle = (
-  route: RouteFeature,
-  method: RouteSelectionMethod,
-) => {
-  if (method === "pareto") {
-    const routeRank =
-      route.properties.pareto_rank ?? route.properties.route_index + 1;
+const formatPercent = (value: number) => `${String(Math.round(value))}%`;
+type TooltipValue = string | number | readonly (string | number)[] | undefined;
 
-    return `Pareto route ${String(routeRank)}`;
-  }
+const formatTooltipPercent = (value: TooltipValue) => {
+  const numericValue = Array.isArray(value)
+    ? Number(value[0] ?? 0)
+    : Number(value ?? 0);
 
-  if (method === "weighted") {
-    return "Weighted route";
-  }
+  return formatPercent(numericValue);
+};
 
-  return "Shortest route";
+const objectiveBadgeConfig = [
+  {
+    key: "uphillComfort",
+    label: objectiveScoreLabels.uphillComfort,
+    color: "green",
+  },
+  {
+    key: "snowlessComfort",
+    label: objectiveScoreLabels.snowlessComfort,
+    color: "cyan",
+  },
+  {
+    key: "scenicComfort",
+    label: objectiveScoreLabels.scenicComfort,
+    color: "orange",
+  },
+] as const;
+
+const RouteObjectiveBadges = ({ route }: { route: RouteFeature }) => {
+  const comfortScores = getRouteComfortScores(route);
+
+  return (
+    <Group gap={6}>
+      {objectiveBadgeConfig.map((objective) => (
+        <Badge
+          key={objective.key}
+          variant="light"
+          color={objective.color}
+          size="sm"
+        >
+          {objective.label} {formatPercent(comfortScores[objective.key])}
+        </Badge>
+      ))}
+    </Group>
+  );
 };
 
 const RouteStepList = ({
@@ -210,6 +257,19 @@ export const RoutePanel = ({
   const selectedRouteSteps = selectedRoute?.properties.steps ?? [];
   const [statsOpen, setStatsOpen] = useState(false);
   const statsVisible = statsOpen && routes != null;
+  const [walkingSpeed, setWalkingSpeed] = useState(5);
+  const [bikingSpeed, setBikingSpeed] = useState(15);
+  const routeSpeedKmPerHour = getRouteSpeedKmPerHour(
+    transportMode,
+    walkingSpeed,
+    bikingSpeed,
+  );
+  const getEstimatedTimeLabel = (distanceMeters: number) =>
+    formatDuration(
+      estimateRouteDurationMinutes(distanceMeters, routeSpeedKmPerHour),
+    );
+  const selectedRouteProgressionData =
+    buildRouteProgressionData(selectedRouteSteps);
 
   const form = useForm({
     mode: "uncontrolled",
@@ -253,34 +313,33 @@ export const RoutePanel = ({
           >
             <Paper withBorder p="sm" radius="md">
               <Group justify="space-between" align="flex-start" wrap="nowrap">
-                <Group gap="sm" wrap="nowrap" align="flex-start">
-                  <Box
-                    w={12}
-                    miw={12}
-                    h={30}
-                    mt={4}
-                    bg={getRouteColor(routeIndex)}
-                    style={{ borderRadius: 999 }}
-                  />
-                  <Box>
-                    <Flex align="center">
+                <Box
+                  w={12}
+                  miw={12}
+                  h={30}
+                  mt={4}
+                  bg={getRouteColor(routeIndex)}
+                  style={{ borderRadius: 999 }}
+                />
+                <Stack gap={0}>
+                  <Group justify="space-between">
+                    <Group>
                       <Text fw={600}>
                         {getRouteTitle(route, routeCount, method)}
                       </Text>
                       {recommendedRoute && (
-                        <Flex ml="sm" align="center">
-                          <IconStarFilled size="1rem" color="gold" />
-                        </Flex>
+                        <IconStarFilled size="1rem" color="gold" />
                       )}
-                    </Flex>
-                    <Text size="sm" c="dimmed">
-                      {getRouteSubtitle(route, method)}
-                    </Text>
-                  </Box>
-                </Group>
-                <Badge variant="light" size="lg">
-                  {distanceToText(route.properties.distance)}
-                </Badge>
+                    </Group>
+                    <Badge variant="light" size="lg">
+                      {distanceToText(route.properties.distance)}
+                    </Badge>
+                  </Group>
+                  <Text size="sm" c="dimmed" mb="xs">
+                    {getEstimatedTimeLabel(route.properties.distance)}
+                  </Text>
+                  <RouteObjectiveBadges route={route} />
+                </Stack>
               </Group>
             </Paper>
           </UnstyledButton>
@@ -291,44 +350,118 @@ export const RoutePanel = ({
 
   const routeDetailPane = selectedRoute ? (
     <Stack gap="md" mt="md" w="100%">
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <Group
-          gap="xs"
-          wrap="nowrap"
-          align="center"
-          style={{ flex: 1 }}
-          miw={0}
+      <Group justify="flex-start" align="center">
+        <ActionIcon
+          variant="filled"
+          onClick={onBackToRouteList}
+          aria-label="Back to routes"
+          style={{ flexShrink: 0 }}
         >
-          <ActionIcon
-            variant="subtle"
-            onClick={onBackToRouteList}
-            aria-label="Back to routes"
-            style={{ flexShrink: 0 }}
-          >
-            <IconChevronLeft size="2rem" />
-          </ActionIcon>
-          <Box style={{ flex: 1 }} miw={0}>
-            <Text fw={600} lineClamp={1}>
-              {getRouteTitle(selectedRoute, routeCount, method)}
-            </Text>
-            <Text size="sm" c="dimmed" lineClamp={1}>
-              {getRouteSubtitle(selectedRoute, method)}
-            </Text>
-          </Box>
-        </Group>
-        <Badge variant="light" size="lg" style={{ flexShrink: 0 }}>
-          {distanceToText(selectedRoute.properties.distance)}
-        </Badge>
+          <IconChevronLeft size="2rem" />
+        </ActionIcon>
+        <Title order={3}>
+          {getRouteTitle(selectedRoute, routeCount, method)}
+        </Title>
       </Group>
 
       {selectedRouteSteps.length > 0 ? (
-        <Box pr="xs">
+        <Stack gap="xs">
+          <Paper withBorder radius="md" p="sm">
+            <Title order={4}>Info</Title>
+            <Stack gap="sm">
+              <Group justify="space-between">
+                <Text fw={600}>Total Distance</Text>
+                <Text fw={800}>
+                  {distanceToText(selectedRoute.properties.distance)}
+                </Text>
+              </Group>
+              <Group justify="space-between" align="flex-start" wrap="nowrap">
+                <Stack gap={0}>
+                  <Text fw={600}>Estimated Time</Text>
+                  <Text size="sm" c="dimmed" w={200}>
+                    Based on {String(routeSpeedKmPerHour)} km/h average{" "}
+                    {transportMode === "walk" ? "walking" : "biking"} speed
+                  </Text>
+                </Stack>
+                <Text fw={800}>
+                  {getEstimatedTimeLabel(selectedRoute.properties.distance)}
+                </Text>
+              </Group>
+              <Stack gap={0}>
+                <Text fw={600}>Scores</Text>
+                <Text size="sm" c="dimmed" mb="xs">
+                  Higher is better
+                </Text>
+                <RouteObjectiveBadges route={selectedRoute} />
+              </Stack>
+            </Stack>
+          </Paper>
+
+          <Paper withBorder radius="md" p="sm">
+            <Title order={4}>Progression</Title>
+            <Text size="sm" c="dimmed" mb="sm">
+              Scores throughout the route
+            </Text>
+            <LineChart
+              style={{
+                width: "100%",
+                aspectRatio: 1.6,
+              }}
+              responsive
+              data={selectedRouteProgressionData}
+              margin={{
+                top: 5,
+                right: 8,
+                left: 8,
+                bottom: 5,
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="stepLabel" />
+              <YAxis
+                width={40}
+                domain={[0, 100]}
+                tickFormatter={(value: number) => formatPercent(value)}
+              />
+              <RechartsTooltip formatter={formatTooltipPercent} />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="uphillComfort"
+                name={objectiveScoreLabels.uphillComfort}
+                stroke="#2b8a3e"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 6 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="scenicComfort"
+                name={objectiveScoreLabels.scenicComfort}
+                stroke="#f08c00"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 6 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="snowlessComfort"
+                name={objectiveScoreLabels.snowlessComfort}
+                stroke="#1c7ed6"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
+          </Paper>
+
+          <Title order={3}>Steps</Title>
           <RouteStepList
             steps={selectedRouteSteps}
             selectedStepIndex={selectedStepIndex}
             onSelectStepIndex={onSelectStepIndex}
           />
-        </Box>
+        </Stack>
       ) : (
         <Text size="sm" c="dimmed">
           No route details yet.
@@ -342,24 +475,24 @@ export const RoutePanel = ({
   const routeListSection = hasRoute ? (
     <>
       <Divider my="md" />
-      <Group justify="space-between" align="center" mb="md">
-        <Text fw={600}>{routeCount === 1 ? "Route" : "Routes"}</Text>
-        <Group gap="xs">
-          <Button
-            size="xs"
-            variant={statsVisible ? "filled" : "light"}
-            color="grape"
-            onClick={() => {
-              setStatsOpen((currentOpen) => !currentOpen);
-            }}
-            leftSection={<IconChartDots size="1rem" />}
-          >
-            Route Stats
-          </Button>
+      <Group justify="space-between" mb="md">
+        <Group>
+          <Text fw={600}>{routeCount === 1 ? "Route" : "Routes"}</Text>
           <Badge variant="light" size="lg">
             {routeCount}
           </Badge>
         </Group>
+        <Button
+          size="xs"
+          variant={statsVisible ? "filled" : "light"}
+          color="grape"
+          onClick={() => {
+            setStatsOpen((currentOpen) => !currentOpen);
+          }}
+          leftSection={<IconChartDots size="1rem" />}
+        >
+          Statistics
+        </Button>
       </Group>
       {routeOverviewList}
     </>
@@ -567,16 +700,61 @@ export const RoutePanel = ({
     </Tabs.Panel>
   );
 
+  const historyTab = (
+    <Tabs.Panel value="history">
+      <Text mt="md">History...</Text>
+    </Tabs.Panel>
+  );
+
+  const settingsTab = (
+    <Tabs.Panel value="settings">
+      <Text mt="md">Walking Speed (in km/h)</Text>
+      <Slider
+        color="blue"
+        size="xl"
+        mt="sm"
+        mb="lg"
+        value={walkingSpeed}
+        onChange={setWalkingSpeed}
+        domain={[1, 10]}
+        min={1}
+        max={10}
+        marks={[
+          { value: 1, label: "1" },
+          { value: 5, label: "5" },
+          { value: 10, label: "10" },
+        ]}
+      />
+      <Text mt="xl">Biking Speed (in km/h)</Text>
+      <Slider
+        color="blue"
+        size="xl"
+        mt="sm"
+        mb="lg"
+        value={bikingSpeed}
+        onChange={setBikingSpeed}
+        domain={[1, 30]}
+        min={1}
+        max={30}
+        marks={[
+          { value: 1, label: "1" },
+          { value: 15, label: "15" },
+          { value: 30, label: "30" },
+        ]}
+      />
+    </Tabs.Panel>
+  );
+
   const tabs = (
     <Tabs defaultValue="search">
       <Tabs.List>
         <Tabs.Tab value="search">Search</Tabs.Tab>
         <Tabs.Tab value="history">History</Tabs.Tab>
+        <Tabs.Tab value="settings">Settings</Tabs.Tab>
       </Tabs.List>
       {searchTab}
-      <Tabs.Panel value="history">
-        <Text mt="md">History...</Text>
-      </Tabs.Panel>
+      {historyTab}
+      {settingsTab}
     </Tabs>
   );
 

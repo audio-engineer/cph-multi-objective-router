@@ -81,6 +81,7 @@ class RouteStepResponse(BaseModel):
     distance: float
     segment_index_from: int
     segment_index_to: int
+    objective_costs: RouteObjectiveCostBreakdown
 
 
 class RouteObjectiveCostBreakdown(BaseModel):
@@ -193,6 +194,9 @@ class RouteStep:
     distance: float
     segment_index_from: int
     segment_index_to: int
+    snow_penalty: float
+    uphill_penalty: float
+    scenic_penalty: float
 
 
 @dataclass(frozen=True, slots=True)

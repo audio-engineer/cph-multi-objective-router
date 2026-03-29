@@ -24,6 +24,10 @@ import {
 } from "recharts";
 import type { RouteFeature, RouteFeatureCollection } from "@/client";
 import { panelWidth, statsPanelWidth } from "@/constants.ts";
+import {
+  getRouteComfortScores,
+  objectiveScoreLabels,
+} from "@/route-metrics.ts";
 import { getRouteColor } from "@/utils.ts";
 
 type ObjectiveAxis = "snowlessComfort" | "uphillComfort" | "scenicComfort";
@@ -51,20 +55,9 @@ interface RouteStatsDatum {
 type TooltipValue = string | number | readonly (string | number)[] | undefined;
 
 const objectiveLabels: Record<ObjectiveAxis, string> = {
-  snowlessComfort: "Snowless",
-  uphillComfort: "Flat",
-  scenicComfort: "Scenic",
-};
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-
-const toComfortPercent = (penalty: number, distance: number) => {
-  if (distance <= 0) {
-    return 0;
-  }
-
-  return clamp((1 - penalty / distance) * 100, 0, 100);
+  snowlessComfort: objectiveScoreLabels.snowlessComfort,
+  uphillComfort: objectiveScoreLabels.uphillComfort,
+  scenicComfort: objectiveScoreLabels.scenicComfort,
 };
 
 const getRouteLabel = (route: RouteFeature, routeCount: number) => {
@@ -73,7 +66,7 @@ const getRouteLabel = (route: RouteFeature, routeCount: number) => {
   }
 
   if (route.properties.pareto_rank != null) {
-    return `Alternative ${String(route.properties.pareto_rank)}`;
+    return `Route ${String(route.properties.pareto_rank)}`;
   }
 
   return `Route ${String(route.properties.route_index + 1)}`;
@@ -86,26 +79,14 @@ const buildRouteStatsData = (
   routeCollection.features
     .filter((route) => route.properties.objective_costs != null)
     .map((route) => {
-      const objectiveCosts = route.properties.objective_costs;
-      const distance = objectiveCosts?.distance ?? route.properties.distance;
       const routeIndex = route.properties.route_index;
+      const comfortScores = getRouteComfortScores(route);
 
       return {
         routeIndex,
         routeLabel: getRouteLabel(route, routeCollection.features.length),
         color: getRouteColor(routeIndex),
-        snowlessComfort: toComfortPercent(
-          objectiveCosts?.snow_penalty ?? 0,
-          distance,
-        ),
-        uphillComfort: toComfortPercent(
-          objectiveCosts?.uphill_penalty ?? 0,
-          distance,
-        ),
-        scenicComfort: toComfortPercent(
-          objectiveCosts?.scenic_penalty ?? 0,
-          distance,
-        ),
+        ...comfortScores,
         selected: selectedRouteIndex === routeIndex,
       };
     });
@@ -260,7 +241,7 @@ export const RouteStatsPanel = ({
 
               <Paper withBorder radius="md" p="md">
                 <Text fw={600} mb="xs">
-                  Route Objective Comparison
+                  Route Score Comparison
                 </Text>
                 <BarChart
                   responsive
