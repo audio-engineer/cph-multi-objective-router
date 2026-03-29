@@ -91,7 +91,11 @@ export const AttributeOverlay = ({
   return (
     <FeatureGroup>
       <Popup>
-        <Text>{overlayAttribute}</Text>
+        <Text>
+          {overlayAttribute.charAt(0).toUpperCase() + overlayAttribute.slice(1)}{" "}
+          area
+        </Text>
+        {/*<Text>Intensity: {layerQuery.data.features[0].properties.value}/1</Text>*/}
       </Popup>
       <GeoJSON data={toGeoJsonObject(layerQuery.data)} style={style} />
     </FeatureGroup>
