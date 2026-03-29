@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   Divider,
+  Drawer,
   Flex,
   Group,
   Image,
@@ -22,6 +23,7 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import {
+  IconChartDots,
   IconChevronLeft,
   IconQuestionMark,
   IconStarFilled,
@@ -36,6 +38,8 @@ import markerIconUrl from "leaflet/dist/images/marker-icon.png?url";
 import type { TransportMode } from "@/types/global.ts";
 import type { RouteSelectionMethod, Mode } from "@/App.tsx";
 import { getRouteColor } from "@/utils.ts";
+import { useDisclosure } from "@mantine/hooks";
+import { CartesianGrid, Scatter, ScatterChart, XAxis, YAxis } from "recharts";
 
 export type PickMode = "origin" | "destination" | null;
 
@@ -206,6 +210,7 @@ export const RoutePanel = ({
   const detailOpen = selectedRouteIndex != null && selectedRoute != null;
   const clearDisabled = !hasOriginMarker && !hasDestinationMarker;
   const selectedRouteSteps = selectedRoute?.properties.steps ?? [];
+  const [opened, { open, close }] = useDisclosure(false);
 
   const form = useForm({
     mode: "uncontrolled",
@@ -340,9 +345,20 @@ export const RoutePanel = ({
       <Divider my="md" />
       <Group justify="space-between" align="center" mb="md">
         <Text fw={600}>{routeCount === 1 ? "Route" : "Routes"}</Text>
-        <Badge variant="light" size="lg">
-          {routeCount}
-        </Badge>
+        <Group gap="xs">
+          <Button
+            size="xs"
+            variant="light"
+            color="grape"
+            onClick={open}
+            leftSection={<IconChartDots size="1rem" />}
+          >
+            Route Stats
+          </Button>
+          <Badge variant="light" size="lg">
+            {routeCount}
+          </Badge>
+        </Group>
       </Group>
       {routeOverviewList}
     </>
@@ -563,29 +579,77 @@ export const RoutePanel = ({
     </Tabs>
   );
 
+  const data = [
+    { x: 100, y: 200, z: 200 },
+    { x: 120, y: 100, z: 260 },
+    { x: 170, y: 300, z: 400 },
+    { x: 140, y: 250, z: 280 },
+    { x: 150, y: 400, z: 500 },
+    { x: 110, y: 280, z: 200 },
+  ];
+
   return (
-    <Paper
-      shadow="xs"
-      radius="md"
-      style={{
-        zIndex: 1000,
-      }}
-      w={360}
-      // p="md"
-      pos="absolute"
-      top={12}
-      left={12}
-      opacity={0.95}
-    >
-      {shouldConstrainPanel ? (
-        <ScrollArea.Autosize mah="calc(100dvh - 90px)" offsetScrollbars>
-          <Box pt={20} pb={20} pl={20} pr={8}>
-            {tabs}
-          </Box>
-        </ScrollArea.Autosize>
-      ) : (
-        <Box p={20}>{tabs}</Box>
-      )}
-    </Paper>
+    <>
+      <Paper
+        shadow="xs"
+        radius="md"
+        style={{
+          zIndex: 1000,
+        }}
+        w={360}
+        // p="md"
+        pos="absolute"
+        top={12}
+        left={12}
+        opacity={0.95}
+      >
+        {shouldConstrainPanel ? (
+          <ScrollArea.Autosize mah="calc(100dvh - 90px)" offsetScrollbars>
+            <Box pt={20} pb={20} pl={20} pr={8}>
+              {tabs}
+            </Box>
+          </ScrollArea.Autosize>
+        ) : (
+          <Box p={20}>{tabs}</Box>
+        )}
+      </Paper>
+      <Drawer
+        opened={opened}
+        onClose={close}
+        title="Route Statistics"
+        size={420}
+        offset={400}
+        zIndex={2000}
+        overlayProps={{ backgroundOpacity: 0.2, blur: 0.2 }}
+      >
+        <Box>
+          <ScatterChart
+            style={{
+              width: "100%",
+              maxWidth: "700px",
+              maxHeight: "70vh",
+              aspectRatio: 1.618,
+            }}
+            responsive
+            margin={{
+              top: 20,
+              right: 0,
+              bottom: 0,
+              left: 0,
+            }}
+          >
+            <CartesianGrid />
+            <XAxis type="number" dataKey="x" name="stature" />
+            <YAxis type="number" dataKey="y" name="weight" width="auto" />
+            <Scatter
+              activeShape={{ fill: "red" }}
+              name="A school"
+              data={data}
+              fill="#8884d8"
+            />
+          </ScatterChart>
+        </Box>
+      </Drawer>
+    </>
   );
 };
