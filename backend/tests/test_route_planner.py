@@ -34,6 +34,9 @@ def test_build_route_steps_merges_adjacent_segments() -> None:
     assert len(steps) == 1
     assert steps[0].street == "Main"
     assert steps[0].distance == 30.0
+    assert steps[0].snow_penalty == 0.0
+    assert steps[0].uphill_penalty == 0.0
+    assert steps[0].scenic_penalty == 30.0
 
 
 def test_compute_route_path_for_methods(simple_graph: nx.MultiDiGraph[int]) -> None:
@@ -214,6 +217,16 @@ def test_build_route_feature_collection_returns_pareto_routes(
     assert feature_collection.features[0].properties.pareto_rank == 1
     assert feature_collection.features[0].properties.steps[0].street == "Scenic Way"
     assert feature_collection.features[0].properties.objective_costs is not None
+    assert (
+        feature_collection.features[0].properties.steps[0].objective_costs.distance
+        == 160.0
+    )
+    assert (
+        feature_collection.features[0]
+        .properties.steps[0]
+        .objective_costs.scenic_penalty
+        == 0.0
+    )
     assert feature_collection.features[1].properties.route_index == 1
     assert feature_collection.features[1].properties.pareto_rank == 2
 

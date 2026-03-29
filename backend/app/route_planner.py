@@ -157,7 +157,12 @@ def build_route_steps_from_edges(
     current_step: RouteStep | None = None
 
     for segment_index, edge_attributes in enumerate(segment_edge_attributes):
-        segment_distance = coerce_float(edge_attributes.get("length"), default=0.0)
+        (
+            segment_distance,
+            snow_penalty,
+            uphill_penalty,
+            scenic_penalty,
+        ) = compute_edge_objective_components(edge_attributes)
         street_name = _resolve_street_name(edge_attributes)
 
         if current_step is None:
@@ -166,6 +171,9 @@ def build_route_steps_from_edges(
                 distance=segment_distance,
                 segment_index_from=segment_index,
                 segment_index_to=segment_index + 1,
+                snow_penalty=snow_penalty,
+                uphill_penalty=uphill_penalty,
+                scenic_penalty=scenic_penalty,
             )
             continue
 
@@ -175,6 +183,9 @@ def build_route_steps_from_edges(
                 distance=current_step.distance + segment_distance,
                 segment_index_from=current_step.segment_index_from,
                 segment_index_to=segment_index + 1,
+                snow_penalty=current_step.snow_penalty + snow_penalty,
+                uphill_penalty=current_step.uphill_penalty + uphill_penalty,
+                scenic_penalty=current_step.scenic_penalty + scenic_penalty,
             )
             continue
 
@@ -184,6 +195,9 @@ def build_route_steps_from_edges(
             distance=segment_distance,
             segment_index_from=segment_index,
             segment_index_to=segment_index + 1,
+            snow_penalty=snow_penalty,
+            uphill_penalty=uphill_penalty,
+            scenic_penalty=scenic_penalty,
         )
 
     if current_step is not None:
@@ -772,6 +786,12 @@ def build_route_step_responses(route_steps: list[RouteStep]) -> list[RouteStepRe
             distance=route_step.distance,
             segment_index_from=route_step.segment_index_from,
             segment_index_to=route_step.segment_index_to,
+            objective_costs=RouteObjectiveCostBreakdown(
+                distance=route_step.distance,
+                snow_penalty=route_step.snow_penalty,
+                uphill_penalty=route_step.uphill_penalty,
+                scenic_penalty=route_step.scenic_penalty,
+            ),
         )
         for route_step in route_steps
     ]
