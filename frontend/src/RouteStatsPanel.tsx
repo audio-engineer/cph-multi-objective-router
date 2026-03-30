@@ -254,23 +254,27 @@ export const RouteStatsPanel = ({
                   <YAxis domain={[0, 100]} tickFormatter={formatPercentTick} />
                   <RechartsTooltip formatter={formatTooltipValue} />
                   <Legend />
-                  <Bar
-                    dataKey="snowlessComfort"
-                    name={objectiveLabels.snowlessComfort}
-                    fill="#4c6ef5"
-                    radius={[6, 6, 0, 0]}
-                  />
+                  {/* TODO Match the fill colors to the score badge colors */}
                   <Bar
                     dataKey="uphillComfort"
                     name={objectiveLabels.uphillComfort}
-                    fill="#f08c00"
+                    fill="#2b8a3e"
                     radius={[6, 6, 0, 0]}
+                    barSize={15}
                   />
                   <Bar
                     dataKey="scenicComfort"
                     name={objectiveLabels.scenicComfort}
-                    fill="#2b8a3e"
+                    fill="#f08c00"
                     radius={[6, 6, 0, 0]}
+                    barSize={15}
+                  />
+                  <Bar
+                    dataKey="snowlessComfort"
+                    name={objectiveLabels.snowlessComfort}
+                    fill="#1c7ed6"
+                    radius={[6, 6, 0, 0]}
+                    barSize={15}
                   />
                 </BarChart>
               </Paper>

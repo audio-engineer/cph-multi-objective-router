@@ -35,7 +35,7 @@ import type {
 } from "@/client";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png?url";
 import type { TransportMode } from "@/types/global.ts";
-import type { RouteSelectionMethod, Mode } from "@/App.tsx";
+import type { RouteSelectionMethod, Mode, SearchHistoryEntry } from "@/App.tsx";
 import {
   buildRouteProgressionData,
   estimateRouteDurationMinutes,
@@ -66,7 +66,10 @@ export interface RoutePanelHandle {
 
 interface RoutePanelProps {
   ref?: Ref<RoutePanelHandle>;
-  searchByAddress: (origin: string, destination: string) => Promise<void>;
+  searchByAddress: (
+    origin: string,
+    destination: string,
+  ) => Promise<boolean> | Promise<void>;
   routes: RouteFeatureCollection | undefined;
   loading: boolean;
   selectedRoute: RouteFeature | null;
@@ -82,17 +85,23 @@ interface RoutePanelProps {
   hasDestinationMarker: boolean;
   pickMode: PickMode;
   transportMode: TransportMode;
-  setTransportMode: (transportMode: TransportMode) => void;
+  onTransportModeChange: (transportMode: TransportMode) => void;
   mode: Mode;
-  setMode: (mode: Mode) => void;
+  onModeChange: (mode: Mode) => void;
   method: RouteSelectionMethod;
-  setMethod: (method: RouteSelectionMethod) => void;
+  onMethodChange: (method: RouteSelectionMethod) => void;
   scenic: number;
-  setScenic: (scenic: number) => void;
+  onScenicChange: (scenic: number) => void;
+  onScenicChangeEnd: (scenic: number) => void;
   snow: number;
-  setSnow: (snow: number) => void;
+  onSnowChange: (snow: number) => void;
+  onSnowChangeEnd: (snow: number) => void;
   uphill: number;
-  setUphill: (uphill: number) => void;
+  onUphillChange: (uphill: number) => void;
+  onUphillChangeEnd: (uphill: number) => void;
+  searchHistory: SearchHistoryEntry[];
+  onSelectHistoryEntry: (entry: SearchHistoryEntry) => Promise<void>;
+  onClearHistory: () => void;
 }
 
 const distanceToText = (distance: number) => {
@@ -140,14 +149,14 @@ const objectiveBadgeConfig = [
     color: "green",
   },
   {
-    key: "snowlessComfort",
-    label: objectiveScoreLabels.snowlessComfort,
-    color: "cyan",
-  },
-  {
     key: "scenicComfort",
     label: objectiveScoreLabels.scenicComfort,
     color: "orange",
+  },
+  {
+    key: "snowlessComfort",
+    label: objectiveScoreLabels.snowlessComfort,
+    color: "cyan",
   },
 ] as const;
 
@@ -236,17 +245,23 @@ export const RoutePanel = ({
   pickMode,
   onClearAll,
   transportMode,
-  setTransportMode,
+  onTransportModeChange,
   mode,
-  setMode,
+  onModeChange,
   method,
-  setMethod,
+  onMethodChange,
   scenic,
-  setScenic,
+  onScenicChange,
+  onScenicChangeEnd,
   snow,
-  setSnow,
+  onSnowChange,
+  onSnowChangeEnd,
   uphill,
-  setUphill,
+  onUphillChange,
+  onUphillChangeEnd,
+  searchHistory,
+  onSelectHistoryEntry,
+  onClearHistory,
 }: RoutePanelProps) => {
   const routeList = routes?.features ?? [];
   const routeCount = routeList.length;
@@ -524,6 +539,7 @@ export const RoutePanel = ({
             </ActionIcon>
           </Tooltip>
         </Group>
+
         <Group align="end" wrap="nowrap">
           <TextInput
             label="Destination"
@@ -543,23 +559,25 @@ export const RoutePanel = ({
             </ActionIcon>
           </Tooltip>
         </Group>
+
         <Button
           variant="light"
           color="red"
           mt="md"
           leftSection={<IconTrash size="1rem" />}
           onClick={onClearAll}
-          disabled={clearDisabled}
+          disabled={loading || clearDisabled}
         >
           Clear
         </Button>
+
         <Text mt="md" py="xs">
           Transport
         </Text>
         <SegmentedControl
           value={transportMode}
-          onChange={(nextTransportMode) => {
-            setTransportMode(nextTransportMode as TransportMode);
+          onChange={(value) => {
+            onTransportModeChange(value as TransportMode);
           }}
           fullWidth
           data={[
@@ -567,6 +585,7 @@ export const RoutePanel = ({
             { label: "Bike", value: "bike" },
           ]}
         />
+
         <Group mt="md" py="xs">
           <Text>Mode</Text>
           <Tooltip
@@ -579,18 +598,11 @@ export const RoutePanel = ({
             </ActionIcon>
           </Tooltip>
         </Group>
+
         <SegmentedControl
           value={mode}
           onChange={(value) => {
-            setMode(value as Mode);
-
-            if (value === "shortest") {
-              setMethod(value as RouteSelectionMethod);
-            }
-
-            if (value === "advanced") {
-              setMethod("weighted");
-            }
+            onModeChange(value as Mode);
           }}
           fullWidth
           data={[
@@ -598,12 +610,13 @@ export const RoutePanel = ({
             { label: "Advanced", value: "advanced" },
           ]}
         />
+
         {mode === "advanced" && (
           <>
             <SegmentedControl
               value={method}
               onChange={(value) => {
-                setMethod(value as RouteSelectionMethod);
+                onMethodChange(value as RouteSelectionMethod);
               }}
               fullWidth
               mt="md"
@@ -612,6 +625,7 @@ export const RoutePanel = ({
                 { label: "Pareto", value: "pareto" },
               ]}
             />
+
             <Text mt="md">Scenic</Text>
             <Slider
               color="blue"
@@ -619,13 +633,15 @@ export const RoutePanel = ({
               mt="sm"
               mb="lg"
               value={scenic}
-              onChange={setScenic}
+              onChange={onScenicChange}
+              onChangeEnd={onScenicChangeEnd}
               marks={[
                 { value: 25, label: "25%" },
                 { value: 50, label: "50%" },
                 { value: 75, label: "75%" },
               ]}
             />
+
             <Text mt="md">Avoid Snow</Text>
             <Slider
               color="blue"
@@ -633,13 +649,15 @@ export const RoutePanel = ({
               mt="sm"
               mb="lg"
               value={snow}
-              onChange={setSnow}
+              onChange={onSnowChange}
+              onChangeEnd={onSnowChangeEnd}
               marks={[
                 { value: 25, label: "25%" },
                 { value: 50, label: "50%" },
                 { value: 75, label: "75%" },
               ]}
             />
+
             <Text mt="md">Avoid Uphill</Text>
             <Slider
               color="blue"
@@ -647,7 +665,8 @@ export const RoutePanel = ({
               mt="sm"
               mb="lg"
               value={uphill}
-              onChange={setUphill}
+              onChange={onUphillChange}
+              onChangeEnd={onUphillChangeEnd}
               marks={[
                 { value: 25, label: "25%" },
                 { value: 50, label: "50%" },
@@ -656,6 +675,7 @@ export const RoutePanel = ({
             />
           </>
         )}
+
         <Button
           mt="md"
           disabled={loading || !form.values.origin || !form.values.destination}
@@ -702,7 +722,60 @@ export const RoutePanel = ({
 
   const historyTab = (
     <Tabs.Panel value="history">
-      <Text mt="md">History...</Text>
+      <Group justify="space-between" mt="md" mb="sm">
+        <Text fw={600}>Recent searches</Text>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          onClick={onClearHistory}
+          disabled={searchHistory.length === 0}
+        >
+          Clear
+        </Button>
+      </Group>
+
+      {searchHistory.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          No recent searches yet.
+        </Text>
+      ) : (
+        <Stack gap="xs">
+          {searchHistory.map((entry) => (
+            <UnstyledButton
+              key={entry.key}
+              onClick={() => {
+                void onSelectHistoryEntry(entry);
+              }}
+            >
+              <Paper withBorder p="sm" radius="md">
+                <Text fw={600} lineClamp={1}>
+                  {entry.originLabel}
+                </Text>
+                <Text size="sm" c="dimmed" lineClamp={1}>
+                  {entry.destinationLabel}
+                </Text>
+
+                <Group gap="xs" mt="xs">
+                  <Badge variant="light">
+                    {entry.request.transportMode === "walk" ? "Walk" : "Bike"}
+                  </Badge>
+                  <Badge variant="light">
+                    {entry.request.mode === "shortest"
+                      ? "Shortest"
+                      : entry.request.method === "weighted"
+                        ? "Weighted"
+                        : "Pareto"}
+                  </Badge>
+                </Group>
+
+                <Text size="xs" c="dimmed" mt="xs">
+                  {new Date(entry.createdAt).toLocaleString()}
+                </Text>
+              </Paper>
+            </UnstyledButton>
+          ))}
+        </Stack>
+      )}
     </Tabs.Panel>
   );
 

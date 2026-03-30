@@ -1,10 +1,11 @@
 """FastAPI composition layer for the multi-objective router."""
 
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Annotated
 
 import osmnx as ox
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from geojson_pydantic import MultiPolygon as PydanticMultiPolygon
 from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
 from shapely.geometry import Polygon as ShapelyPolygon
@@ -28,8 +29,11 @@ from app.models import (
     LayerFeatureCollection,
     OverlayAttribute,
     ReverseGeocodeResponse,
+    RouteComputationOptions,
     RouteCoordinates,
     RouteFeatureCollection,
+    RouteObjectiveWeights,
+    RouteSelectionMethod,
     TransportMode,
 )
 from app.route_planner import build_route_feature_collection
@@ -123,6 +127,129 @@ def _build_route_from_coordinate_request(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ParetoRoutingLimits:
+    """Upper bounds controlling the pareto label-setting search."""
+
+    max_routes: int
+    max_labels_per_node: int
+    max_total_labels: int
+
+
+def build_route_objective_weights(
+    scenic: Annotated[int, Query(ge=0, le=100)] = 0,
+    avoid_snow: Annotated[int, Query(ge=0, le=100)] = 0,
+    avoid_uphill: Annotated[int, Query(ge=0, le=100)] = 0,
+) -> RouteObjectiveWeights:
+    """Build route objective weights from GET query parameters."""
+    return RouteObjectiveWeights(
+        scenic=scenic,
+        avoid_snow=avoid_snow,
+        avoid_uphill=avoid_uphill,
+    )
+
+
+def build_pareto_routing_limits(
+    pareto_max_routes: Annotated[int, Query(ge=1, le=25)] = 8,
+    pareto_max_labels_per_node: Annotated[int, Query(ge=5, le=200)] = 40,
+    pareto_max_total_labels: Annotated[int, Query(ge=1_000, le=500_000)] = 50_000,
+) -> ParetoRoutingLimits:
+    """Build pareto-routing search limits from GET query parameters."""
+    return ParetoRoutingLimits(
+        max_routes=pareto_max_routes,
+        max_labels_per_node=pareto_max_labels_per_node,
+        max_total_labels=pareto_max_total_labels,
+    )
+
+
+def build_route_computation_options(
+    route_objective_weights: Annotated[
+        RouteObjectiveWeights,
+        Depends(build_route_objective_weights),
+    ],
+    pareto_routing_limits: Annotated[
+        ParetoRoutingLimits,
+        Depends(build_pareto_routing_limits),
+    ],
+    route_selection_method: Annotated[RouteSelectionMethod, Query()] = "shortest",
+) -> RouteComputationOptions:
+    """Build route computation options from GET query parameters."""
+    return RouteComputationOptions(
+        route_selection_method=route_selection_method,
+        objective_weights=route_objective_weights,
+        pareto_max_routes=pareto_routing_limits.max_routes,
+        pareto_max_labels_per_node=pareto_routing_limits.max_labels_per_node,
+        pareto_max_total_labels=pareto_routing_limits.max_total_labels,
+    )
+
+
+def build_route_coordinates_from_query(
+    origin_longitude: float,
+    origin_latitude: float,
+    destination_longitude: float,
+    destination_latitude: float,
+) -> RouteCoordinates:
+    """Build route coordinates from GET query parameters."""
+    return RouteCoordinates(
+        origin_longitude=origin_longitude,
+        origin_latitude=origin_latitude,
+        destination_longitude=destination_longitude,
+        destination_latitude=destination_latitude,
+    )
+
+
+def build_address_route_request_from_query(
+    transport_mode: TransportMode,
+    origin: str,
+    destination: str,
+    route_options: Annotated[
+        RouteComputationOptions,
+        Depends(build_route_computation_options),
+    ],
+) -> AddressRouteRequest:
+    """Build an address route request from GET query parameters."""
+    return AddressRouteRequest(
+        transport_mode=transport_mode,
+        origin=origin,
+        destination=destination,
+        route_options=route_options,
+    )
+
+
+def build_coordinate_route_request_from_query(
+    transport_mode: TransportMode,
+    route_coordinates: Annotated[
+        RouteCoordinates,
+        Depends(build_route_coordinates_from_query),
+    ],
+    route_options: Annotated[
+        RouteComputationOptions,
+        Depends(build_route_computation_options),
+    ],
+) -> CoordinateRouteRequest:
+    """Build a coordinate route request from GET query parameters."""
+    return CoordinateRouteRequest.model_validate(
+        {
+            "transport_mode": transport_mode,
+            "origin": {
+                "type": "Point",
+                "coordinates": [
+                    route_coordinates.origin_longitude,
+                    route_coordinates.origin_latitude,
+                ],
+            },
+            "destination": {
+                "type": "Point",
+                "coordinates": [
+                    route_coordinates.destination_longitude,
+                    route_coordinates.destination_latitude,
+                ],
+            },
+            "route_options": route_options.model_dump(),
+        }
+    )
+
+
 @app.get("/layers", response_model=LayerFeatureCollection)
 def list_layers(
     overlay_attribute: OverlayAttribute,
@@ -168,17 +295,23 @@ def get_current_boundary() -> BoundaryFeatureCollection:
     )
 
 
-@app.post("/routes/by-address", response_model=RouteFeatureCollection)
+@app.get("/routes/by-address", response_model=RouteFeatureCollection)
 def create_route_from_address(
-    request: AddressRouteRequest,
+    request: Annotated[
+        AddressRouteRequest,
+        Depends(build_address_route_request_from_query),
+    ],
 ) -> RouteFeatureCollection:
     """Compute a route from address inputs."""
     return _build_route_from_address_request(request)
 
 
-@app.post("/routes/by-coordinates", response_model=RouteFeatureCollection)
+@app.get("/routes/by-coordinates", response_model=RouteFeatureCollection)
 def create_route_from_coordinates(
-    request: CoordinateRouteRequest,
+    request: Annotated[
+        CoordinateRouteRequest,
+        Depends(build_coordinate_route_request_from_query),
+    ],
 ) -> RouteFeatureCollection:
     """Compute a route from coordinate inputs."""
     return _build_route_from_coordinate_request(request)
