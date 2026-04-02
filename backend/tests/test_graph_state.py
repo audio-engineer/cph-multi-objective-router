@@ -8,11 +8,11 @@ from shapely.geometry import MultiPolygon, Point, Polygon
 
 from app.graph_state import (
     LoadedGraphState,
-    get_edges_for_mode,
-    get_graph_for_mode,
-    load_boundary_polygon,
+    get_edge_geodataframe_for_travel_mode,
+    get_graph_for_travel_mode,
+    load_boundary_geometry,
     load_graph_state,
-    validate_point_within_boundary,
+    validate_coordinate_within_boundary,
 )
 
 
@@ -23,31 +23,31 @@ def test_get_graph_and_edges_for_mode() -> None:
         {"geometry": []}, geometry="geometry", crs="EPSG:4326"
     )
     state = LoadedGraphState(
-        bike_graph=graph,
-        walk_graph=graph,
-        bike_edges=geodataframe,
-        walk_edges=geodataframe,
+        cycling_graph=graph,
+        walking_graph=graph,
+        cycling_edges=geodataframe,
+        walking_edges=geodataframe,
     )
 
-    assert get_graph_for_mode(state, "bike") is graph
-    assert get_edges_for_mode(state, "walk").equals(geodataframe)
+    assert get_graph_for_travel_mode(state, "cycling") is graph
+    assert get_edge_geodataframe_for_travel_mode(state, "walking").equals(geodataframe)
 
 
 def test_get_graph_for_mode_raises_when_missing() -> None:
     """Accessor should raise HTTP 500 when graph state is missing."""
     with pytest.raises(HTTPException):
-        _ = get_graph_for_mode(LoadedGraphState(), "bike")
+        _ = get_graph_for_travel_mode(LoadedGraphState(), "cycling")
 
 
 def test_validate_point_within_boundary() -> None:
     """Boundary validation should pass inside and fail outside."""
     boundary = MultiPolygon([Polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)])])
-    state = LoadedGraphState(boundary_polygon=boundary)
+    state = LoadedGraphState(boundary_geometry=boundary)
 
-    validate_point_within_boundary(state, 1.0, 1.0)
+    validate_coordinate_within_boundary(state, 1.0, 1.0)
 
     with pytest.raises(HTTPException):
-        validate_point_within_boundary(state, 5.0, 5.0)
+        validate_coordinate_within_boundary(state, 5.0, 5.0)
 
 
 def test_load_boundary_polygon(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,7 +62,7 @@ def test_load_boundary_polygon(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("app.graph_state.ox.geocode_to_gdf", fake_geocode_to_gdf)
 
-    loaded_boundary = load_boundary_polygon("place")
+    loaded_boundary = load_boundary_geometry("place")
 
     assert loaded_boundary.geom_type == "MultiPolygon"
 
@@ -97,13 +97,15 @@ def test_load_graph_state(monkeypatch: pytest.MonkeyPatch) -> None:
         return boundary
 
     monkeypatch.setattr("app.graph_state.ox.graph_from_place", fake_graph_from_place)
-    monkeypatch.setattr("app.graph_state.apply_all_overlays", fake_apply_all_overlays)
     monkeypatch.setattr(
-        "app.graph_state.build_edge_geodataframe",
+        "app.graph_state.load_and_apply_overlays", fake_apply_all_overlays
+    )
+    monkeypatch.setattr(
+        "app.graph_state._build_edge_geodataframe",
         fake_build_edge_geodataframe,
     )
     monkeypatch.setattr(
-        "app.graph_state.load_boundary_polygon",
+        "app.graph_state.load_boundary_geometry",
         fake_load_boundary_polygon,
     )
 
@@ -114,11 +116,11 @@ def test_load_graph_state(monkeypatch: pytest.MonkeyPatch) -> None:
         graph_state=state,
     )
 
-    assert state.bike_graph is bike_graph
-    assert state.walk_graph is walk_graph
-    assert state.bike_edges is geodataframe
-    assert state.walk_edges is geodataframe
-    assert state.boundary_polygon is boundary
+    assert state.cycling_graph is bike_graph
+    assert state.walking_graph is walk_graph
+    assert state.cycling_edges is geodataframe
+    assert state.walking_edges is geodataframe
+    assert state.boundary_geometry is boundary
 
 
 def test_load_boundary_polygon_raises_for_invalid_geometry(
@@ -136,4 +138,4 @@ def test_load_boundary_polygon_raises_for_invalid_geometry(
     monkeypatch.setattr("app.graph_state.ox.geocode_to_gdf", fake_geocode_to_gdf)
 
     with pytest.raises(TypeError):
-        _ = load_boundary_polygon("place")
+        _ = load_boundary_geometry("place")

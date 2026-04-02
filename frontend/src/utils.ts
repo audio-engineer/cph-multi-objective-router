@@ -2,7 +2,7 @@ import type { GeoJsonObject, Feature, Polygon, MultiPolygon } from "geojson";
 import type {
   BoundaryFeature,
   BoundaryFeatureCollection,
-  LayerFeatureCollection,
+  OverlayFeatureCollection,
   RouteFeatureCollection,
 } from "@/client";
 import L from "leaflet";
@@ -12,7 +12,7 @@ export const toGeoJsonObject = (
   featureCollection:
     | RouteFeatureCollection
     | BoundaryFeatureCollection
-    | LayerFeatureCollection,
+    | OverlayFeatureCollection,
 ): GeoJsonObject => {
   const copy = { ...featureCollection };
 
@@ -43,7 +43,7 @@ export const toTurfFeature = (
   };
 };
 
-export const fitBoundsRightOfPanel = (
+export const fitBoundsBesidePanel = (
   map: L.Map,
   bounds: L.LatLngBounds,
   padding = 0,

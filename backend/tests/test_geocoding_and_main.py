@@ -5,26 +5,26 @@ import pytest
 from fastapi import HTTPException
 from shapely.geometry import MultiPolygon, Polygon
 
-from app.geocoding import reverse_geocode_address
+from app.geocoding import reverse_geocode_to_address
 from app.graph_state import GRAPH_STATE
 from app.main import (
-    build_address_route_request_from_query,
-    build_coordinate_route_request_from_query,
-    build_pareto_routing_limits,
-    build_route_computation_options,
-    build_route_objective_weights,
-    create_route_from_address,
-    create_route_from_coordinates,
+    build_address_route_request_from_params,
+    build_coordinate_route_request_from_params,
+    build_pareto_search_limits,
+    build_route_planning_options,
+    build_route_preference_weights,
+    compute_route_by_address,
+    compute_route_by_coordinates,
     get_current_boundary,
-    list_layers,
+    list_overlay_features,
     reverse_geocode,
 )
 from app.models import (
-    LayerFeatureCollection,
+    OverlayFeatureCollection,
     ReverseGeocodeResponse,
-    RouteComputationOptions,
     RouteCoordinates,
     RouteFeatureCollection,
+    RoutePlanningOptions,
 )
 
 
@@ -57,7 +57,7 @@ def test_reverse_geocode_address_formats_result(
         fake_get,
     )
 
-    response = reverse_geocode_address(12.0, 55.0)
+    response = reverse_geocode_to_address(12.0, 55.0)
 
     assert response.address == "Test Road 5"
 
@@ -75,7 +75,7 @@ def test_reverse_geocode_address_returns_empty_for_unexpected_payload(
         fake_get,
     )
 
-    response = reverse_geocode_address(12.0, 55.0)
+    response = reverse_geocode_to_address(12.0, 55.0)
 
     assert response.address == ""
 
@@ -98,14 +98,14 @@ def test_main_route_helper_builds_from_addresses(
         fake_route_builder,
     )
 
-    request = build_address_route_request_from_query(
-        transport_mode="bike",
+    request = build_address_route_request_from_params(
+        travel_mode="cycling",
         origin="A",
         destination="B",
-        route_options=RouteComputationOptions(),
+        route_options=RoutePlanningOptions(),
     )
 
-    result = create_route_from_address(request)
+    result = compute_route_by_address(request)
 
     assert result is dummy_route_feature_collection
 
@@ -124,13 +124,13 @@ def test_main_coordinate_route_helper_delegates(
         fake_route_builder,
     )
 
-    request = build_coordinate_route_request_from_query(
-        transport_mode="walk",
+    request = build_coordinate_route_request_from_params(
+        travel_mode="walking",
         route_coordinates=RouteCoordinates(12.0, 55.0, 12.1, 55.1),
-        route_options=RouteComputationOptions(),
+        route_options=RoutePlanningOptions(),
     )
 
-    result = create_route_from_coordinates(request)
+    result = compute_route_by_coordinates(request)
 
     assert result is dummy_route_feature_collection
 
@@ -142,7 +142,7 @@ def test_list_layers_and_boundary_endpoints(
     geodataframe = gpd.GeoDataFrame(
         {"geometry": []}, geometry="geometry", crs="EPSG:4326"
     )
-    empty_collection = LayerFeatureCollection(type="FeatureCollection", features=[])
+    empty_collection = OverlayFeatureCollection(type="FeatureCollection", features=[])
 
     def fake_get_edges_for_mode(
         _state: object,
@@ -153,23 +153,23 @@ def test_list_layers_and_boundary_endpoints(
     def fake_build_layer_feature_collection(
         *_args: object,
         **_kwargs: object,
-    ) -> LayerFeatureCollection:
+    ) -> OverlayFeatureCollection:
         return empty_collection
 
     monkeypatch.setattr(
-        "app.main.get_edges_for_mode",
+        "app.main.get_edge_geodataframe_for_travel_mode",
         fake_get_edges_for_mode,
     )
     monkeypatch.setattr(
-        "app.main.build_layer_feature_collection",
+        "app.main.build_overlay_feature_collection",
         fake_build_layer_feature_collection,
     )
 
-    layers = list_layers("snow", "bike")
+    layers = list_overlay_features("snow", "cycling")
 
     assert layers is empty_collection
 
-    GRAPH_STATE.boundary_polygon = MultiPolygon(
+    GRAPH_STATE.boundary_geometry = MultiPolygon(
         [Polygon([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])]
     )
     boundary = get_current_boundary()
@@ -178,7 +178,7 @@ def test_list_layers_and_boundary_endpoints(
 
 def test_get_current_boundary_raises_when_not_loaded() -> None:
     """Boundary endpoint should fail if startup resources were not loaded."""
-    GRAPH_STATE.boundary_polygon = None
+    GRAPH_STATE.boundary_geometry = None
 
     with pytest.raises(HTTPException):
         _ = get_current_boundary()
@@ -195,7 +195,7 @@ def test_reverse_geocode_endpoint_wrapper(monkeypatch: pytest.MonkeyPatch) -> No
         return ReverseGeocodeResponse(address=f"{longitude},{latitude},{zoom_level}")
 
     monkeypatch.setattr(
-        "app.main.reverse_geocode_address",
+        "app.main.reverse_geocode_to_address",
         fake_reverse_geocode_address,
     )
 
@@ -206,24 +206,24 @@ def test_reverse_geocode_endpoint_wrapper(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_build_route_computation_options_from_query_values() -> None:
     """Query-param option helper should construct nested routing options."""
-    route_options = build_route_computation_options(
-        route_selection_method="pareto",
-        route_objective_weights=build_route_objective_weights(
-            scenic=10,
-            avoid_snow=20,
-            avoid_uphill=30,
+    route_options = build_route_planning_options(
+        route_optimization_method="pareto",
+        route_preference_weights=build_route_preference_weights(
+            scenic_weight=10,
+            snow_free_weight=20,
+            flat_weight=30,
         ),
-        pareto_routing_limits=build_pareto_routing_limits(
+        pareto_search_limits=build_pareto_search_limits(
             pareto_max_routes=3,
             pareto_max_labels_per_node=25,
             pareto_max_total_labels=12_000,
         ),
     )
 
-    assert route_options.route_selection_method == "pareto"
-    assert route_options.objective_weights.scenic == 10
-    assert route_options.objective_weights.avoid_snow == 20
-    assert route_options.objective_weights.avoid_uphill == 30
+    assert route_options.route_optimization_method == "pareto"
+    assert route_options.preference_weights.scenic_weight == 10
+    assert route_options.preference_weights.snow_free_weight == 20
+    assert route_options.preference_weights.flat_weight == 30
     assert route_options.pareto_max_routes == 3
 
 
@@ -236,12 +236,12 @@ def test_address_route_helper_surfaces_geocoding_failure(
         raise RuntimeError("failed")
 
     monkeypatch.setattr("app.main.ox.geocode", failing_geocode)
-    request = build_address_route_request_from_query(
-        transport_mode="bike",
+    request = build_address_route_request_from_params(
+        travel_mode="cycling",
         origin="A",
         destination="B",
-        route_options=RouteComputationOptions(),
+        route_options=RoutePlanningOptions(),
     )
 
     with pytest.raises(HTTPException):
-        _ = create_route_from_address(request)
+        _ = compute_route_by_address(request)

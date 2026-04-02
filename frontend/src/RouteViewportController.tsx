@@ -1,47 +1,47 @@
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import { fitBoundsRightOfPanel, toGeoJsonObject } from "@/utils.ts";
+import { fitBoundsBesidePanel, toGeoJsonObject } from "@/utils.ts";
 import { useEffect } from "react";
 import type { RouteFeatureCollection } from "@/client";
 
 interface RouteBoundsControllerProps {
-  route: RouteFeatureCollection | undefined;
+  routes: RouteFeatureCollection | undefined;
   selectedStepIndex: number | null;
 }
 
-export const RouteBoundsController = ({
-  route,
+export const RouteViewportController = ({
+  routes,
   selectedStepIndex,
 }: RouteBoundsControllerProps) => {
   const map = useMap();
 
-  const fitRouteBounds = () => {
-    if (!route) {
+  const fitDisplayedRouteBounds = () => {
+    if (!routes) {
       return;
     }
 
-    const bounds = L.geoJSON(toGeoJsonObject(route)).getBounds();
+    const bounds = L.geoJSON(toGeoJsonObject(routes)).getBounds();
 
     if (bounds.isValid()) {
       // map.fitBounds(bounds, { padding: [30, 30] });
 
-      fitBoundsRightOfPanel(map, bounds);
+      fitBoundsBesidePanel(map, bounds);
     }
   };
 
   useEffect(() => {
-    fitRouteBounds();
+    fitDisplayedRouteBounds();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route]);
+  }, [routes]);
 
   useEffect(() => {
     if (selectedStepIndex === null) {
-      fitRouteBounds();
+      fitDisplayedRouteBounds();
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStepIndex, route]);
+  }, [selectedStepIndex, routes]);
 
   return null;
 };

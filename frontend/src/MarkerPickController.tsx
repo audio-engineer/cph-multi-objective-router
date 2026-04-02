@@ -1,21 +1,21 @@
-import type { PickMode } from "@/RoutePanel.tsx";
 import type { Point } from "@/client";
 import { useMapEvents } from "react-leaflet";
+import type { ActiveRouteEndpoint } from "@/types/global.ts";
 
 interface MarkerPickControllerProps {
-  pickMode: PickMode;
+  activeRouteEndpoint: ActiveRouteEndpoint;
   onPickOrigin: (point: Point) => Promise<boolean>;
   onPickDestination: (point: Point) => Promise<boolean>;
 }
 
 export const MarkerPickController = ({
-  pickMode,
+  activeRouteEndpoint,
   onPickOrigin,
   onPickDestination,
 }: MarkerPickControllerProps) => {
   useMapEvents({
     click: (leafletMouseEvent) => {
-      if (!pickMode) {
+      if (!activeRouteEndpoint) {
         return;
       }
 
@@ -27,7 +27,7 @@ export const MarkerPickController = ({
         ],
       };
 
-      if (pickMode === "origin") {
+      if (activeRouteEndpoint === "origin") {
         void onPickOrigin(point);
 
         return;

@@ -8,12 +8,12 @@ import pytest
 from shapely.geometry import MultiPolygon, Point, Polygon
 
 from app.overlays import (
-    apply_overlay_attribute,
-    get_edge_linestring,
-    initialize_overlay_attributes,
-    load_overlay_polygons,
+    apply_overlay_key,
+    get_edge_geometry_linestring,
+    initialize_edge_overlay_values,
+    load_overlay_geometries,
 )
-from app.value_parsing import coerce_float
+from app.value_parsing import parse_float_or_default
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def test_get_edge_linestring_builds_fallback_from_nodes(
     overlay_graph: nx.MultiDiGraph[int],
 ) -> None:
     """When geometry is missing, edge linestring should be derived from node coords."""
-    edge_line = get_edge_linestring(overlay_graph, 1, 2, {"length": 2.0})
+    edge_line = get_edge_geometry_linestring(overlay_graph, 1, 2, {"length": 2.0})
 
     assert list(edge_line.coords) == [(0.0, 0.0), (2.0, 0.0)]
 
@@ -40,12 +40,12 @@ def test_initialize_and_apply_overlay_attribute(
     overlay_graph: nx.MultiDiGraph[int],
 ) -> None:
     """Overlay application should set the attribute on covering edges."""
-    initialize_overlay_attributes(overlay_graph)
+    initialize_edge_overlay_values(overlay_graph)
 
     polygon = Polygon([(0.5, -1.0), (1.5, -1.0), (1.5, 1.0), (0.5, 1.0)])
-    apply_overlay_attribute(
+    apply_overlay_key(
         overlay_graph,
-        overlay_attribute="snow",
+        overlay_key="snow",
         overlay_polygons=[polygon],
         overlay_values=[0.8],
     )
@@ -53,7 +53,7 @@ def test_initialize_and_apply_overlay_attribute(
     edge_data = overlay_graph.get_edge_data(1, 2)
     assert edge_data is not None
     first_edge = edge_data[0]
-    assert coerce_float(cast("object", first_edge["snow"])) == 0.8
+    assert parse_float_or_default(cast("object", first_edge["snow"])) == 0.8
 
 
 def test_load_overlay_polygons_handles_polygon_and_multipolygon(
@@ -75,7 +75,7 @@ def test_load_overlay_polygons_handles_polygon_and_multipolygon(
 
     monkeypatch.setattr("app.overlays.gpd.read_file", fake_read_file)
 
-    polygons, values = load_overlay_polygons("data/overlays/snow.json")
+    polygons, values = load_overlay_geometries("data/overlays/snow.json")
 
     assert len(polygons) == 2
     assert values == [0.2, 0.4]
@@ -99,4 +99,4 @@ def test_load_overlay_polygons_raises_for_invalid_geometry(
     monkeypatch.setattr("app.overlays.gpd.read_file", fake_read_file)
 
     with pytest.raises(TypeError):
-        _ = load_overlay_polygons("data/overlays/scenic.json")
+        _ = load_overlay_geometries("data/overlays/scenic.json")

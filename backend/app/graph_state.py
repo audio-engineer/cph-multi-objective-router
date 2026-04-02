@@ -9,14 +9,14 @@ from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
 from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry import Polygon as ShapelyPolygon
 
-from app.overlays import apply_all_overlays
+from app.overlays import load_and_apply_overlays
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     import geopandas as gpd
 
-    from app.models import TransportMode
+    from app.models import TravelMode
     from app.typing_aliases import MultiDiGraphAny
 
 type BoundaryGeometry = ShapelyPolygon | ShapelyMultiPolygon
@@ -26,11 +26,11 @@ type BoundaryGeometry = ShapelyPolygon | ShapelyMultiPolygon
 class LoadedGraphState:
     """All in-memory graph artifacts required by API endpoints."""
 
-    bike_graph: MultiDiGraphAny | None = None
-    walk_graph: MultiDiGraphAny | None = None
-    bike_edges: gpd.GeoDataFrame | None = None
-    walk_edges: gpd.GeoDataFrame | None = None
-    boundary_polygon: BoundaryGeometry | None = None
+    cycling_graph: MultiDiGraphAny | None = None
+    walking_graph: MultiDiGraphAny | None = None
+    cycling_edges: gpd.GeoDataFrame | None = None
+    walking_edges: gpd.GeoDataFrame | None = None
+    boundary_geometry: BoundaryGeometry | None = None
 
 
 GRAPH_STATE = LoadedGraphState()
@@ -51,7 +51,7 @@ def _graph_to_edge_geodataframe(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
     )
 
 
-def _graph_from_place(
+def _load_graph_from_place(
     place_name: str,
     *,
     network_type: str,
@@ -65,7 +65,7 @@ def _graph_from_place(
     return graph_from_place(place_name, network_type=network_type)
 
 
-def _geocode_to_gdf(place_name: str) -> gpd.GeoDataFrame:
+def _geocode_place_to_geodataframe(place_name: str) -> gpd.GeoDataFrame:
     """Call OSMnx geocode_to_gdf with a typed return value."""
     geocode_to_gdf = cast(
         "Callable[[str], gpd.GeoDataFrame]",
@@ -75,16 +75,16 @@ def _geocode_to_gdf(place_name: str) -> gpd.GeoDataFrame:
     return geocode_to_gdf(place_name)
 
 
-def build_edge_geodataframe(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
+def _build_edge_geodataframe(graph: MultiDiGraphAny) -> gpd.GeoDataFrame:
     """Build edge GeoDataFrame from a graph, ensuring WGS84 CRS."""
     edge_geodataframe = _graph_to_edge_geodataframe(graph)
 
     return edge_geodataframe.set_crs("EPSG:4326", allow_override=True)
 
 
-def load_boundary_polygon(place_name: str) -> ShapelyMultiPolygon:
+def load_boundary_geometry(place_name: str) -> ShapelyMultiPolygon:
     """Load and normalize place boundary geometry as a MultiPolygon."""
-    boundary_geodataframe = _geocode_to_gdf(place_name)
+    boundary_geodataframe = _geocode_place_to_geodataframe(place_name)
     boundary_geometry = boundary_geodataframe.geometry.iloc[0]
 
     if isinstance(boundary_geometry, ShapelyPolygon):
@@ -105,26 +105,28 @@ def load_graph_state(
     graph_state: LoadedGraphState,
 ) -> None:
     """Load graphs, overlays, edge indexes, and boundaries into state."""
-    bike_graph = _graph_from_place(place_name, network_type="bike")
-    walk_graph = _graph_from_place(place_name, network_type="walk")
+    bike_graph = _load_graph_from_place(place_name, network_type="bike")
+    walk_graph = _load_graph_from_place(place_name, network_type="walk")
 
-    apply_all_overlays(bike_graph, overlay_directory)
-    apply_all_overlays(walk_graph, overlay_directory)
+    load_and_apply_overlays(bike_graph, overlay_directory)
+    load_and_apply_overlays(walk_graph, overlay_directory)
 
-    graph_state.bike_graph = bike_graph
-    graph_state.walk_graph = walk_graph
-    graph_state.bike_edges = build_edge_geodataframe(bike_graph)
-    graph_state.walk_edges = build_edge_geodataframe(walk_graph)
-    graph_state.boundary_polygon = load_boundary_polygon(place_name)
+    graph_state.cycling_graph = bike_graph
+    graph_state.walking_graph = walk_graph
+    graph_state.cycling_edges = _build_edge_geodataframe(bike_graph)
+    graph_state.walking_edges = _build_edge_geodataframe(walk_graph)
+    graph_state.boundary_geometry = load_boundary_geometry(place_name)
 
 
-def get_graph_for_mode(
+def get_graph_for_travel_mode(
     graph_state: LoadedGraphState,
-    transport_mode: TransportMode,
+    travel_mode: TravelMode,
 ) -> MultiDiGraphAny:
     """Return the loaded graph for the requested transport mode."""
     selected_graph = (
-        graph_state.bike_graph if transport_mode == "bike" else graph_state.walk_graph
+        graph_state.cycling_graph
+        if travel_mode == "cycling"
+        else graph_state.walking_graph
     )
 
     if selected_graph is None:
@@ -133,13 +135,15 @@ def get_graph_for_mode(
     return selected_graph
 
 
-def get_edges_for_mode(
+def get_edge_geodataframe_for_travel_mode(
     graph_state: LoadedGraphState,
-    transport_mode: TransportMode,
+    travel_mode: TravelMode,
 ) -> gpd.GeoDataFrame:
     """Return the loaded edge GeoDataFrame for the requested transport mode."""
     selected_edges = (
-        graph_state.bike_edges if transport_mode == "bike" else graph_state.walk_edges
+        graph_state.cycling_edges
+        if travel_mode == "cycling"
+        else graph_state.walking_edges
     )
 
     if selected_edges is None:
@@ -148,13 +152,13 @@ def get_edges_for_mode(
     return selected_edges
 
 
-def validate_point_within_boundary(
+def validate_coordinate_within_boundary(
     graph_state: LoadedGraphState,
     longitude: float,
     latitude: float,
 ) -> None:
     """Validate that a coordinate is inside the configured boundary."""
-    boundary_polygon = graph_state.boundary_polygon
+    boundary_polygon = graph_state.boundary_geometry
 
     if boundary_polygon is None:
         return

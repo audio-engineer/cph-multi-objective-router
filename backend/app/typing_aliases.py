@@ -10,4 +10,4 @@ else:
     MultiDiGraphAny = nx.MultiDiGraph
 
 
-type EdgeAttributes = dict[str, object]
+type EdgeAttributeMap = dict[str, object]

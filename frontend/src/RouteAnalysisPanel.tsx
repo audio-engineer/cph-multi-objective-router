@@ -23,16 +23,17 @@ import {
   YAxis,
 } from "recharts";
 import type { RouteFeature, RouteFeatureCollection } from "@/client";
-import { panelWidth, statsPanelWidth } from "@/constants.ts";
+import { routePanelWidth, analysisPanelWidth } from "@/constants.ts";
 import {
-  getRouteComfortScores,
-  objectiveScoreLabels,
+  getRouteScores,
+  routeScoreLabels,
+  type RouteScores,
 } from "@/route-metrics.ts";
 import { getRouteColor } from "@/utils.ts";
 
-type ObjectiveAxis = "snowlessComfort" | "uphillComfort" | "scenicComfort";
+type ScoreAxis = keyof RouteScores;
 
-interface RouteStatsPanelProps {
+interface RouteAnalysisPanelProps {
   routes: RouteFeatureCollection;
   selectedRouteIndex: number | null;
   onClose: () => void;
@@ -42,23 +43,17 @@ interface RouteStatsPanelProps {
   maxHeight?: string;
 }
 
-interface RouteStatsDatum {
+interface RouteScoreSummary {
   routeIndex: number;
   routeLabel: string;
   color: string;
-  snowlessComfort: number;
-  uphillComfort: number;
-  scenicComfort: number;
+  snowFreeScore: number;
+  flatScore: number;
+  scenicScore: number;
   selected: boolean;
 }
 
 type TooltipValue = string | number | readonly (string | number)[] | undefined;
-
-const objectiveLabels: Record<ObjectiveAxis, string> = {
-  snowlessComfort: objectiveScoreLabels.snowlessComfort,
-  uphillComfort: objectiveScoreLabels.uphillComfort,
-  scenicComfort: objectiveScoreLabels.scenicComfort,
-};
 
 const getRouteLabel = (route: RouteFeature, routeCount: number) => {
   if (routeCount === 1) {
@@ -72,21 +67,21 @@ const getRouteLabel = (route: RouteFeature, routeCount: number) => {
   return `Route ${String(route.properties.route_index + 1)}`;
 };
 
-const buildRouteStatsData = (
+const buildRouteAnalysisData = (
   routeCollection: RouteFeatureCollection,
   selectedRouteIndex: number | null,
-): RouteStatsDatum[] =>
+): RouteScoreSummary[] =>
   routeCollection.features
-    .filter((route) => route.properties.objective_costs != null)
+    .filter((route) => route.properties.penalty_breakdown != null)
     .map((route) => {
       const routeIndex = route.properties.route_index;
-      const comfortScores = getRouteComfortScores(route);
+      const routeScores = getRouteScores(route);
 
       return {
         routeIndex,
         routeLabel: getRouteLabel(route, routeCollection.features.length),
         color: getRouteColor(routeIndex),
-        ...comfortScores,
+        ...routeScores,
         selected: selectedRouteIndex === routeIndex,
       };
     });
@@ -101,16 +96,16 @@ const formatTooltipValue = (value: TooltipValue) => {
   return formatPercentTick(numericValue);
 };
 
-const ScatterComparisonChart = ({
+const RouteScoreScatterPlot = ({
   data,
   title,
   xKey,
   yKey,
 }: {
-  data: RouteStatsDatum[];
+  data: RouteScoreSummary[];
   title: string;
-  xKey: ObjectiveAxis;
-  yKey: ObjectiveAxis;
+  xKey: ScoreAxis;
+  yKey: ScoreAxis;
 }) => (
   <Paper withBorder radius="md" p="md">
     <Text fw={600} mb="xs">
@@ -126,11 +121,11 @@ const ScatterComparisonChart = ({
         type="number"
         dataKey={xKey}
         label={{
-          value: objectiveLabels[xKey],
+          value: routeScoreLabels[xKey],
           position: "insideBottom",
           offset: -10,
         }}
-        name={objectiveLabels[xKey]}
+        name={routeScoreLabels[xKey]}
         domain={[0, 100]}
         tickFormatter={formatPercentTick}
       />
@@ -138,12 +133,13 @@ const ScatterComparisonChart = ({
         type="number"
         dataKey={yKey}
         label={{
-          value: objectiveLabels[yKey],
+          value: routeScoreLabels[yKey],
           position: "insideLeft",
+          textAnchor: "middle",
           angle: -90,
           offset: 5,
         }}
-        name={objectiveLabels[yKey]}
+        name={routeScoreLabels[yKey]}
         domain={[0, 100]}
         // width="auto"
         tickFormatter={formatPercentTick}
@@ -166,16 +162,17 @@ const ScatterComparisonChart = ({
   </Paper>
 );
 
-export const RouteStatsPanel = ({
+export const RouteAnalysisPanel = ({
   routes,
   selectedRouteIndex,
   onClose,
   style,
   top = 12,
-  left = panelWidth + 20,
+  left = routePanelWidth + 20,
   maxHeight = "calc(100dvh - 90px)",
-}: RouteStatsPanelProps) => {
-  const chartData = buildRouteStatsData(routes, selectedRouteIndex);
+}: RouteAnalysisPanelProps) => {
+  const analysisData = buildRouteAnalysisData(routes, selectedRouteIndex);
+  const routeCount = routes.features.length;
 
   return (
     <Paper
@@ -184,7 +181,7 @@ export const RouteStatsPanel = ({
       pos="absolute"
       top={top}
       left={left}
-      w={statsPanelWidth}
+      w={analysisPanelWidth}
       mah={maxHeight}
       style={{
         zIndex: 1000,
@@ -197,24 +194,26 @@ export const RouteStatsPanel = ({
         <Box px={20} py={18} pr={12}>
           <Group justify="space-between" align="flex-start" mb="sm">
             <Box>
-              <Title order={2}>Route Statistics</Title>
+              <Title order={2}>
+                Route {routeCount === 1 ? "Analysis" : "Comparison"}
+              </Title>
               <Text size="sm" c="dimmed">
-                Normalized to 0-100%, higher is better.
+                Higher is better
               </Text>
             </Box>
             <ActionIcon
               variant="subtle"
               onClick={onClose}
-              aria-label="Close route statistics"
+              aria-label={`Close route ${routeCount === 1 ? "analysis" : "comparison"}`}
             >
               <IconX size="1rem" />
             </ActionIcon>
           </Group>
 
-          {chartData.length > 0 ? (
+          {analysisData.length > 0 ? (
             <Stack gap="md">
               <Group gap="xs" wrap="wrap">
-                {chartData.map((route) => (
+                {analysisData.map((route) => (
                   <Group key={route.routeIndex} gap={6} wrap="nowrap">
                     <Box
                       w={10}
@@ -232,7 +231,7 @@ export const RouteStatsPanel = ({
                     </Text>
                     {route.selected && (
                       <Badge size="xs" variant="light">
-                        Focused
+                        Selected
                       </Badge>
                     )}
                   </Group>
@@ -241,13 +240,12 @@ export const RouteStatsPanel = ({
 
               <Paper withBorder radius="md" p="md">
                 <Text fw={600} mb="xs">
-                  Route Score Comparison
+                  Score {routeCount === 1 ? "Analysis" : "Comparison"}
                 </Text>
                 <BarChart
                   responsive
-                  data={chartData}
+                  data={analysisData}
                   style={{ width: "100%", aspectRatio: 1.55 }}
-                  margin={{ top: 10, right: 10, bottom: 10, left: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="routeLabel" />
@@ -256,22 +254,22 @@ export const RouteStatsPanel = ({
                   <Legend />
                   {/* TODO Match the fill colors to the score badge colors */}
                   <Bar
-                    dataKey="uphillComfort"
-                    name={objectiveLabels.uphillComfort}
+                    dataKey="flatScore"
+                    name={routeScoreLabels.flatScore}
                     fill="#2b8a3e"
                     radius={[6, 6, 0, 0]}
                     barSize={15}
                   />
                   <Bar
-                    dataKey="scenicComfort"
-                    name={objectiveLabels.scenicComfort}
+                    dataKey="scenicScore"
+                    name={routeScoreLabels.scenicScore}
                     fill="#f08c00"
                     radius={[6, 6, 0, 0]}
                     barSize={15}
                   />
                   <Bar
-                    dataKey="snowlessComfort"
-                    name={objectiveLabels.snowlessComfort}
+                    dataKey="snowFreeScore"
+                    name={routeScoreLabels.snowFreeScore}
                     fill="#1c7ed6"
                     radius={[6, 6, 0, 0]}
                     barSize={15}
@@ -279,28 +277,29 @@ export const RouteStatsPanel = ({
                 </BarChart>
               </Paper>
 
-              <ScatterComparisonChart
-                data={chartData}
-                title="Flat vs Snowless"
-                xKey="uphillComfort"
-                yKey="snowlessComfort"
+              <RouteScoreScatterPlot
+                data={analysisData}
+                title="Flat vs Snow-free"
+                xKey="flatScore"
+                yKey="snowFreeScore"
               />
-              <ScatterComparisonChart
-                data={chartData}
+              <RouteScoreScatterPlot
+                data={analysisData}
                 title="Flat vs Scenic"
-                xKey="uphillComfort"
-                yKey="scenicComfort"
+                xKey="flatScore"
+                yKey="scenicScore"
               />
-              <ScatterComparisonChart
-                data={chartData}
-                title="Snowless vs Scenic"
-                xKey="snowlessComfort"
-                yKey="scenicComfort"
+              <RouteScoreScatterPlot
+                data={analysisData}
+                title="Snow-free vs Scenic"
+                xKey="snowFreeScore"
+                yKey="scenicScore"
               />
             </Stack>
           ) : (
             <Text size="sm" c="dimmed">
-              Route statistics are not available for the current result.
+              Route {routeCount === 1 ? "analysis" : "comparison"} is not
+              available for the current result.
             </Text>
           )}
         </Box>

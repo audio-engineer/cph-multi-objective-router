@@ -1,8 +1,4 @@
-import {
-  type PickMode,
-  RoutePanel,
-  type RoutePanelHandle,
-} from "@/RoutePanel.tsx";
+import { RoutePanel, type RoutePanelHandle } from "@/RoutePanel.tsx";
 import { useEffect, useRef, useState } from "react";
 import { Map } from "@/Map.tsx";
 import type {
@@ -11,7 +7,7 @@ import type {
   Point,
   BoundaryFeatureCollection,
 } from "@/client";
-import { StatusBar } from "@/StatusBar.tsx";
+import { StatusNotice } from "@/StatusNotice.tsx";
 import {
   Box,
   Button,
@@ -26,53 +22,59 @@ import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import {
-  createRouteFromAddressRoutesByAddressGetQueryKey,
-  createRouteFromAddressRoutesByAddressGetOptions,
-  createRouteFromCoordinatesRoutesByCoordinatesGetQueryKey,
-  createRouteFromCoordinatesRoutesByCoordinatesGetOptions,
+  computeRouteByAddressRoutesByAddressGetQueryKey,
+  computeRouteByAddressRoutesByAddressGetOptions,
+  computeRouteByCoordinatesRoutesByCoordinatesGetQueryKey,
+  computeRouteByCoordinatesRoutesByCoordinatesGetOptions,
   getCurrentBoundaryBoundariesCurrentGetOptions,
   reverseGeocodeGeocodingReverseGetOptions,
 } from "@/client/@tanstack/react-query.gen.ts";
-import type { TransportMode } from "@/types/global.ts";
+import type {
+  ActiveRouteEndpoint,
+  RouteEndpoint,
+  TravelMode,
+} from "@/types/global.ts";
 import { toTurfFeature } from "@/utils.ts";
 
-type MarkerKind = "origin" | "destination";
 type MarkerSource = "drag" | "pick";
 
-export type Mode = "shortest" | "advanced";
-export type RouteSelectionMethod = "shortest" | "weighted" | "pareto";
+export type RoutePlanningMode = "shortest" | "multi-objective";
+export type RouteOptimizationMethod = "shortest" | "weighted" | "pareto";
 
-interface SearchSettings {
-  transportMode: TransportMode;
-  mode: Mode;
-  method: RouteSelectionMethod;
-  scenic: number;
-  snow: number;
-  uphill: number;
+interface RouteSearchOptions {
+  travelMode: TravelMode;
+  routePlanningMode: RoutePlanningMode;
+  routeOptimizationMethod: RouteOptimizationMethod;
+  scenicWeight: number;
+  snowFreeWeight: number;
+  flatWeight: number;
 }
 
-type AddressSearchRequest = SearchSettings & {
+interface AddressRouteSearchRequest extends RouteSearchOptions {
   source: "address";
   origin: string;
   destination: string;
-};
-type CoordinateSearchRequest = SearchSettings & {
-  source: "coords";
+}
+
+interface CoordinateRouteSearchRequest extends RouteSearchOptions {
+  source: "coordinates";
   origin: Point;
   destination: Point;
-};
+}
 
-type SearchRequest = AddressSearchRequest | CoordinateSearchRequest;
+type RouteSearchRequest =
+  | AddressRouteSearchRequest
+  | CoordinateRouteSearchRequest;
 
 export interface SearchHistoryEntry {
   key: string;
-  request: SearchRequest;
+  request: RouteSearchRequest;
   originLabel: string;
   destinationLabel: string;
   createdAt: string;
 }
 
-const routeStaleTimeMs = 1000 * 60 * 60 * 24;
+const routeStaleTimeMs = 1000 * 60 * 60 * 24; // 24 hours
 const historyStorageKey = "cph-multi-objective-router:search-history:v1";
 const maxHistoryEntries = 20;
 const sliderSearchDelayMs = 1000;
@@ -87,80 +89,88 @@ const normalizePoint = (point: Point): Point => ({
   ],
 });
 
-const resolveMethodForMode = (
-  mode: Mode,
-  method: RouteSelectionMethod,
-): RouteSelectionMethod => {
-  if (mode === "shortest") {
+const resolveRouteOptimizationMethod = (
+  routePlanningMode: RoutePlanningMode,
+  routeOptimizationMethod: RouteOptimizationMethod,
+): RouteOptimizationMethod => {
+  if (routePlanningMode === "shortest") {
     return "shortest";
   }
 
-  return method === "shortest" ? "weighted" : method;
+  return routeOptimizationMethod === "shortest"
+    ? "weighted"
+    : routeOptimizationMethod;
 };
 
-const canonicalizeSearchRequest = (request: SearchRequest): SearchRequest => {
-  const nextMethod = resolveMethodForMode(request.mode, request.method);
+const normalizeRouteSearchRequest = (
+  routeSearchRequest: RouteSearchRequest,
+): RouteSearchRequest => {
+  const nextMethod = resolveRouteOptimizationMethod(
+    routeSearchRequest.routePlanningMode,
+    routeSearchRequest.routeOptimizationMethod,
+  );
+
   const nextWeights =
-    request.mode === "advanced"
+    routeSearchRequest.routePlanningMode === "multi-objective"
       ? {
-          scenic: request.scenic,
-          snow: request.snow,
-          uphill: request.uphill,
+          scenicWeight: routeSearchRequest.scenicWeight,
+          snowFreeWeight: routeSearchRequest.snowFreeWeight,
+          flatWeight: routeSearchRequest.flatWeight,
         }
       : {
-          scenic: 0,
-          snow: 0,
-          uphill: 0,
+          scenicWeight: 0,
+          snowFreeWeight: 0,
+          flatWeight: 0,
         };
 
-  if (request.source === "address") {
+  if (routeSearchRequest.source === "address") {
     return {
-      ...request,
-      origin: normalizeAddress(request.origin),
-      destination: normalizeAddress(request.destination),
-      method: nextMethod,
+      ...routeSearchRequest,
+      origin: normalizeAddress(routeSearchRequest.origin),
+      destination: normalizeAddress(routeSearchRequest.destination),
+      routeOptimizationMethod: nextMethod,
       ...nextWeights,
     };
   }
 
   return {
-    ...request,
-    origin: normalizePoint(request.origin),
-    destination: normalizePoint(request.destination),
-    method: nextMethod,
+    ...routeSearchRequest,
+    origin: normalizePoint(routeSearchRequest.origin),
+    destination: normalizePoint(routeSearchRequest.destination),
+    routeOptimizationMethod: nextMethod,
     ...nextWeights,
   };
 };
 
-const buildRouteQueryKey = (request: SearchRequest) => {
-  const canonical = canonicalizeSearchRequest(request);
+const buildRouteQueryKey = (routeSearchRequest: RouteSearchRequest) => {
+  const normalizedRequest = normalizeRouteSearchRequest(routeSearchRequest);
 
-  if (canonical.source === "address") {
-    return createRouteFromAddressRoutesByAddressGetQueryKey({
+  if (normalizedRequest.source === "address") {
+    return computeRouteByAddressRoutesByAddressGetQueryKey({
       query: {
-        transport_mode: canonical.transportMode,
-        origin: canonical.origin,
-        destination: canonical.destination,
-        route_selection_method: canonical.method,
-        scenic: canonical.scenic,
-        avoid_snow: canonical.snow,
-        avoid_uphill: canonical.uphill,
+        travel_mode: normalizedRequest.travelMode,
+        origin: normalizedRequest.origin,
+        destination: normalizedRequest.destination,
+        route_optimization_method: normalizedRequest.routeOptimizationMethod,
+        scenic_weight: normalizedRequest.scenicWeight,
+        snow_free_weight: normalizedRequest.snowFreeWeight,
+        flat_weight: normalizedRequest.flatWeight,
         pareto_max_routes: 3,
       },
     });
   }
 
-  return createRouteFromCoordinatesRoutesByCoordinatesGetQueryKey({
+  return computeRouteByCoordinatesRoutesByCoordinatesGetQueryKey({
     query: {
-      transport_mode: canonical.transportMode,
-      origin_longitude: canonical.origin.coordinates[0],
-      origin_latitude: canonical.origin.coordinates[1],
-      destination_longitude: canonical.destination.coordinates[0],
-      destination_latitude: canonical.destination.coordinates[1],
-      route_selection_method: canonical.method,
-      scenic: canonical.scenic,
-      avoid_snow: canonical.snow,
-      avoid_uphill: canonical.uphill,
+      travel_mode: normalizedRequest.travelMode,
+      origin_longitude: normalizedRequest.origin.coordinates[0],
+      origin_latitude: normalizedRequest.origin.coordinates[1],
+      destination_longitude: normalizedRequest.destination.coordinates[0],
+      destination_latitude: normalizedRequest.destination.coordinates[1],
+      route_optimization_method: normalizedRequest.routeOptimizationMethod,
+      scenic_weight: normalizedRequest.scenicWeight,
+      snow_free_weight: normalizedRequest.snowFreeWeight,
+      flat_weight: normalizedRequest.flatWeight,
       pareto_max_routes: 3,
     },
   });
@@ -180,7 +190,7 @@ const upsertHistoryEntry = (
   return [nextEntry, ...withoutDuplicate].slice(0, maxHistoryEntries);
 };
 
-const inBoundsBbox = (
+const isPointInsideBounds = (
   point: Point,
   boundaryFeatureCollection: BoundaryFeatureCollection,
 ) => {
@@ -195,7 +205,7 @@ const isInsideBoundary = (
   point: Point,
   boundaryFeatureCollection: BoundaryFeatureCollection,
 ) => {
-  if (!inBoundsBbox(point, boundaryFeatureCollection)) {
+  if (!isPointInsideBounds(point, boundaryFeatureCollection)) {
     return false;
   }
 
@@ -240,7 +250,8 @@ const App = () => {
     null,
   );
 
-  const [pickMode, setPickMode] = useState<PickMode>(null);
+  const [activeRouteEndpoint, setActiveRouteEndpoint] =
+    useState<ActiveRouteEndpoint>(null);
   const [originPosition, setOriginPosition] = useState<Point | null>(null);
   const [destinationPosition, setDestinationPosition] = useState<Point | null>(
     null,
@@ -252,17 +263,18 @@ const App = () => {
   const [statusColor, setStatusColor] = useState("green");
   const statusTimeoutRef = useRef<number | null>(null);
 
-  const [transportMode, setTransportMode] = useState<TransportMode>("walk");
-  const [mode, setMode] = useState<Mode>("shortest");
-  const [method, setMethod] = useState<RouteSelectionMethod>("shortest");
-  const [scenic, setScenic] = useState(0);
-  const [snow, setSnow] = useState(0);
-  const [uphill, setUphill] = useState(0);
+  const [travelMode, setTravelMode] = useState<TravelMode>("walking");
+  const [routePlanningMode, setRoutePlanningMode] =
+    useState<RoutePlanningMode>("shortest");
+  const [routeOptimizationMethod, setRouteOptimizationMethod] =
+    useState<RouteOptimizationMethod>("shortest");
+  const [scenicWeight, setScenicWeight] = useState(0);
+  const [snowFreeWeight, setSnowFreeWeight] = useState(0);
+  const [flatWeight, setFlatWeight] = useState(0);
 
   const [routeLoading, setRouteLoading] = useState(false);
-  const [committedSearch, setCommittedSearch] = useState<SearchRequest | null>(
-    null,
-  );
+  const [committedSearch, setCommittedSearch] =
+    useState<RouteSearchRequest | null>(null);
   const [searchHistory, setSearchHistory, removeSearchHistory] =
     useLocalStorage<SearchHistoryEntry[]>({
       key: historyStorageKey,
@@ -320,98 +332,111 @@ const App = () => {
     ? getErrorMessage(boundaryQuery.error)
     : null;
 
-  const getCurrentSearchSettings = (
-    overrides: Partial<SearchSettings> = {},
-  ): SearchSettings => {
-    const nextMode = overrides.mode ?? mode;
-    const requestedMethod = overrides.method ?? method;
+  const getCurrentRouteSearchOptions = (
+    overrides: Partial<RouteSearchOptions> = {},
+  ): RouteSearchOptions => {
+    const nextRoutePlanningMode =
+      overrides.routePlanningMode ?? routePlanningMode;
+    const requestedRouteOptimizationMethod =
+      overrides.routeOptimizationMethod ?? routeOptimizationMethod;
 
     return {
-      transportMode: overrides.transportMode ?? transportMode,
-      mode: nextMode,
-      method: resolveMethodForMode(nextMode, requestedMethod),
-      scenic: overrides.scenic ?? scenic,
-      snow: overrides.snow ?? snow,
-      uphill: overrides.uphill ?? uphill,
+      travelMode: overrides.travelMode ?? travelMode,
+      routePlanningMode: nextRoutePlanningMode,
+      routeOptimizationMethod: resolveRouteOptimizationMethod(
+        nextRoutePlanningMode,
+        requestedRouteOptimizationMethod,
+      ),
+      scenicWeight: overrides.scenicWeight ?? scenicWeight,
+      snowFreeWeight: overrides.snowFreeWeight ?? snowFreeWeight,
+      flatWeight: overrides.flatWeight ?? flatWeight,
     };
   };
 
-  const buildAddressSearchRequest = (
+  const createAddressRouteSearchRequest = (
     origin: string,
     destination: string,
-    overrides: Partial<SearchSettings> = {},
-  ): AddressSearchRequest =>
-    canonicalizeSearchRequest({
+    overrides: Partial<RouteSearchOptions> = {},
+  ): AddressRouteSearchRequest =>
+    normalizeRouteSearchRequest({
       source: "address",
       origin,
       destination,
-      ...getCurrentSearchSettings(overrides),
-    }) as AddressSearchRequest;
+      ...getCurrentRouteSearchOptions(overrides),
+    }) as AddressRouteSearchRequest;
 
-  const buildCoordinateSearchRequest = (
+  const createCoordinateRouteSearchRequest = (
     origin: Point,
     destination: Point,
-    overrides: Partial<SearchSettings> = {},
-  ): CoordinateSearchRequest =>
-    canonicalizeSearchRequest({
-      source: "coords",
+    overrides: Partial<RouteSearchOptions> = {},
+  ): CoordinateRouteSearchRequest =>
+    normalizeRouteSearchRequest({
+      source: "coordinates",
       origin,
       destination,
-      ...getCurrentSearchSettings(overrides),
-    }) as CoordinateSearchRequest;
+      ...getCurrentRouteSearchOptions(overrides),
+    }) as CoordinateRouteSearchRequest;
 
-  const rebuildCommittedSearch = (
-    baseRequest: SearchRequest,
-    overrides: Partial<SearchSettings> = {},
-  ): SearchRequest => {
+  const rebuildRouteSearchRequest = (
+    baseRequest: RouteSearchRequest,
+    overrides: Partial<RouteSearchOptions> = {},
+  ): RouteSearchRequest => {
     if (baseRequest.source === "address") {
-      return buildAddressSearchRequest(
+      return createAddressRouteSearchRequest(
         baseRequest.origin,
         baseRequest.destination,
         overrides,
       );
     }
 
-    return buildCoordinateSearchRequest(
+    return createCoordinateRouteSearchRequest(
       baseRequest.origin,
       baseRequest.destination,
       overrides,
     );
   };
 
-  const getAddressRouteQueryOptions = (request: AddressSearchRequest) =>
-    createRouteFromAddressRoutesByAddressGetOptions({
+  const getAddressRouteQueryOptions = (
+    addressRouteSearchRequest: AddressRouteSearchRequest,
+  ) =>
+    computeRouteByAddressRoutesByAddressGetOptions({
       query: {
-        transport_mode: request.transportMode,
-        origin: request.origin,
-        destination: request.destination,
-        route_selection_method: request.method,
-        scenic: request.scenic,
-        avoid_snow: request.snow,
-        avoid_uphill: request.uphill,
+        travel_mode: addressRouteSearchRequest.travelMode,
+        origin: addressRouteSearchRequest.origin,
+        destination: addressRouteSearchRequest.destination,
+        route_optimization_method:
+          addressRouteSearchRequest.routeOptimizationMethod,
+        scenic_weight: addressRouteSearchRequest.scenicWeight,
+        snow_free_weight: addressRouteSearchRequest.snowFreeWeight,
+        flat_weight: addressRouteSearchRequest.flatWeight,
         pareto_max_routes: 3,
       },
     });
 
-  const getCoordinateRouteQueryOptions = (request: CoordinateSearchRequest) =>
-    createRouteFromCoordinatesRoutesByCoordinatesGetOptions({
+  const getCoordinateRouteQueryOptions = (
+    coordinateRouteSearchRequest: CoordinateRouteSearchRequest,
+  ) =>
+    computeRouteByCoordinatesRoutesByCoordinatesGetOptions({
       query: {
-        transport_mode: request.transportMode,
-        origin_longitude: request.origin.coordinates[0],
-        origin_latitude: request.origin.coordinates[1],
-        destination_longitude: request.destination.coordinates[0],
-        destination_latitude: request.destination.coordinates[1],
-        route_selection_method: request.method,
-        scenic: request.scenic,
-        avoid_snow: request.snow,
-        avoid_uphill: request.uphill,
+        travel_mode: coordinateRouteSearchRequest.travelMode,
+        origin_longitude: coordinateRouteSearchRequest.origin.coordinates[0],
+        origin_latitude: coordinateRouteSearchRequest.origin.coordinates[1],
+        destination_longitude:
+          coordinateRouteSearchRequest.destination.coordinates[0],
+        destination_latitude:
+          coordinateRouteSearchRequest.destination.coordinates[1],
+        route_optimization_method:
+          coordinateRouteSearchRequest.routeOptimizationMethod,
+        scenic_weight: coordinateRouteSearchRequest.scenicWeight,
+        snow_free_weight: coordinateRouteSearchRequest.snowFreeWeight,
+        flat_weight: coordinateRouteSearchRequest.flatWeight,
         pareto_max_routes: 3,
       },
     });
 
-  const fetchRoute = async (request: SearchRequest) => {
-    if (request.source === "address") {
-      const options = getAddressRouteQueryOptions(request);
+  const fetchRoute = async (routeSearchRequest: RouteSearchRequest) => {
+    if (routeSearchRequest.source === "address") {
+      const options = getAddressRouteQueryOptions(routeSearchRequest);
 
       return queryClient.fetchQuery({
         ...options,
@@ -419,7 +444,7 @@ const App = () => {
       });
     }
 
-    const options = getCoordinateRouteQueryOptions(request);
+    const options = getCoordinateRouteQueryOptions(routeSearchRequest);
 
     return queryClient.fetchQuery({
       ...options,
@@ -427,29 +452,29 @@ const App = () => {
     });
   };
 
-  const applyRouteResult = (data: RouteFeatureCollection) => {
-    setRoutes(data);
+  const applyRouteSearchResult = (routes: RouteFeatureCollection) => {
+    setRoutes(routes);
     setSelectedRouteIndex(null);
     setSelectedStepIndex(null);
-    setOriginPosition(data.meta.origin);
-    setDestinationPosition(data.meta.destination);
+    setOriginPosition(routes.meta.origin);
+    setDestinationPosition(routes.meta.destination);
     setStatusWithTtl("Ready.", "green", 500);
   };
 
-  const pushSearchHistory = (request: SearchRequest) => {
+  const pushSearchHistory = (routeSearchRequest: RouteSearchRequest) => {
     const originLabel =
-      request.source === "address"
-        ? request.origin
-        : formatPointLabel(request.origin);
+      routeSearchRequest.source === "address"
+        ? routeSearchRequest.origin
+        : formatPointLabel(routeSearchRequest.origin);
 
     const destinationLabel =
-      request.source === "address"
-        ? request.destination
-        : formatPointLabel(request.destination);
+      routeSearchRequest.source === "address"
+        ? routeSearchRequest.destination
+        : formatPointLabel(routeSearchRequest.destination);
 
     const entry: SearchHistoryEntry = {
-      key: JSON.stringify(buildRouteQueryKey(request)),
-      request,
+      key: JSON.stringify(buildRouteQueryKey(routeSearchRequest)),
+      request: routeSearchRequest,
       originLabel,
       destinationLabel,
       createdAt: new Date().toISOString(),
@@ -460,9 +485,9 @@ const App = () => {
     );
   };
 
-  const hasFreshCachedRoute = (request: SearchRequest) => {
+  const hasFreshCachedRoute = (routeSearchRequest: RouteSearchRequest) => {
     const queryState = queryClient.getQueryState<RouteFeatureCollection>(
-      buildRouteQueryKey(request),
+      buildRouteQueryKey(routeSearchRequest),
     );
 
     if (!queryState?.dataUpdatedAt) {
@@ -476,10 +501,10 @@ const App = () => {
     return Date.now() - queryState.dataUpdatedAt < routeStaleTimeMs;
   };
 
-  const executeSearch = async (request: SearchRequest) => {
-    const canonicalRequest = canonicalizeSearchRequest(request);
+  const executeSearch = async (routeSearchRequest: RouteSearchRequest) => {
+    const normalizedRequest = normalizeRouteSearchRequest(routeSearchRequest);
     const searchId = ++latestSearchIdRef.current;
-    const cached = hasFreshCachedRoute(canonicalRequest);
+    const cached = hasFreshCachedRoute(normalizedRequest);
 
     if (!cached) {
       setRouteLoading(true);
@@ -487,15 +512,15 @@ const App = () => {
     }
 
     try {
-      const data = await fetchRoute(canonicalRequest);
+      const data = await fetchRoute(normalizedRequest);
 
       if (searchId !== latestSearchIdRef.current) {
         return true;
       }
 
-      applyRouteResult(data);
-      setCommittedSearch(canonicalRequest);
-      pushSearchHistory(canonicalRequest);
+      applyRouteSearchResult(data);
+      setCommittedSearch(normalizedRequest);
+      pushSearchHistory(normalizedRequest);
 
       return true;
     } catch (error) {
@@ -511,14 +536,14 @@ const App = () => {
     }
   };
 
-  const searchByAddress = async (origin: string, destination: string) =>
-    executeSearch(buildAddressSearchRequest(origin, destination));
+  const runAddressRouteSearch = async (origin: string, destination: string) =>
+    executeSearch(createAddressRouteSearchRequest(origin, destination));
 
-  const searchByCoords = async (origin: Point, destination: Point) =>
-    executeSearch(buildCoordinateSearchRequest(origin, destination));
+  const runCoordinateRouteSearch = async (origin: Point, destination: Point) =>
+    executeSearch(createCoordinateRouteSearchRequest(origin, destination));
 
   const scheduleCommittedSearchRefresh = (
-    overrides: Partial<SearchSettings> = {},
+    overrides: Partial<RouteSearchOptions> = {},
   ) => {
     clearScheduledSliderSearch();
 
@@ -526,104 +551,119 @@ const App = () => {
       return;
     }
 
-    sliderSearchTimeoutRef.current = window.setTimeout(() => {
+    sliderSearchTimeoutRef.current = setTimeout(() => {
       sliderSearchTimeoutRef.current = null;
-      void executeSearch(rebuildCommittedSearch(committedSearch, overrides));
-    }, sliderSearchDelayMs);
+      void executeSearch(rebuildRouteSearchRequest(committedSearch, overrides));
+    }, sliderSearchDelayMs) as unknown as number;
   };
 
-  const handleTransportModeChange = (nextTransportMode: TransportMode) => {
+  const handleTravelModeChange = (nextTravelMode: TravelMode) => {
     clearScheduledSliderSearch();
-    setTransportMode(nextTransportMode);
+    setTravelMode(nextTravelMode);
 
     if (!committedSearch) {
       return;
     }
 
     void executeSearch(
-      rebuildCommittedSearch(committedSearch, {
-        transportMode: nextTransportMode,
+      rebuildRouteSearchRequest(committedSearch, {
+        travelMode: nextTravelMode,
       }),
     );
   };
 
-  const handleModeChange = (nextMode: Mode) => {
+  const handleRoutePlanningModeChange = (
+    nextRoutePlanningMode: RoutePlanningMode,
+  ) => {
     clearScheduledSliderSearch();
 
-    const nextMethod = resolveMethodForMode(
-      nextMode,
-      nextMode === "advanced" && method === "shortest" ? "weighted" : method,
+    const nextRouteOptimizationMethod = resolveRouteOptimizationMethod(
+      nextRoutePlanningMode,
+      nextRoutePlanningMode === "multi-objective" &&
+        routeOptimizationMethod === "shortest"
+        ? "weighted"
+        : routeOptimizationMethod,
     );
 
-    setMode(nextMode);
-    setMethod(nextMethod);
+    setRoutePlanningMode(nextRoutePlanningMode);
+    setRouteOptimizationMethod(nextRouteOptimizationMethod);
 
     if (!committedSearch) {
       return;
     }
 
     void executeSearch(
-      rebuildCommittedSearch(committedSearch, {
-        mode: nextMode,
-        method: nextMethod,
+      rebuildRouteSearchRequest(committedSearch, {
+        routePlanningMode: nextRoutePlanningMode,
+        routeOptimizationMethod: nextRouteOptimizationMethod,
       }),
     );
   };
 
-  const handleMethodChange = (nextMethod: RouteSelectionMethod) => {
+  const handleRouteOptimizationMethodChange = (
+    nextRouteOptimizationMethod: RouteOptimizationMethod,
+  ) => {
     clearScheduledSliderSearch();
-    setMethod(nextMethod);
+    setRouteOptimizationMethod(nextRouteOptimizationMethod);
 
     if (!committedSearch) {
       return;
     }
 
     void executeSearch(
-      rebuildCommittedSearch(committedSearch, {
-        method: nextMethod,
+      rebuildRouteSearchRequest(committedSearch, {
+        routeOptimizationMethod: nextRouteOptimizationMethod,
       }),
     );
   };
 
-  const handleScenicChangeEnd = (nextScenic: number) => {
-    setScenic(nextScenic);
-    scheduleCommittedSearchRefresh({ scenic: nextScenic });
+  const handleScenicWeightChangeEnd = (nextScenicWeight: number) => {
+    setScenicWeight(nextScenicWeight);
+    scheduleCommittedSearchRefresh({ scenicWeight: nextScenicWeight });
   };
 
-  const handleSnowChangeEnd = (nextSnow: number) => {
-    setSnow(nextSnow);
-    scheduleCommittedSearchRefresh({ snow: nextSnow });
+  const handleSnowFreeWeightChangeEnd = (nextSnowFreeWeight: number) => {
+    setSnowFreeWeight(nextSnowFreeWeight);
+    scheduleCommittedSearchRefresh({ snowFreeWeight: nextSnowFreeWeight });
   };
 
-  const handleUphillChangeEnd = (nextUphill: number) => {
-    setUphill(nextUphill);
-    scheduleCommittedSearchRefresh({ uphill: nextUphill });
+  const handleFlatWeightChangeEnd = (nextFlatWeight: number) => {
+    setFlatWeight(nextFlatWeight);
+    scheduleCommittedSearchRefresh({ flatWeight: nextFlatWeight });
   };
 
-  const handleSelectHistoryEntry = async (entry: SearchHistoryEntry) => {
+  const handleSelectHistoryEntry = async (
+    searchHistoryEntry: SearchHistoryEntry,
+  ) => {
     clearScheduledSliderSearch();
 
-    setTransportMode(entry.request.transportMode);
-    setMode(entry.request.mode);
-    setMethod(entry.request.method);
-    setScenic(entry.request.scenic);
-    setSnow(entry.request.snow);
-    setUphill(entry.request.uphill);
+    setTravelMode(searchHistoryEntry.request.travelMode);
+    setRoutePlanningMode(searchHistoryEntry.request.routePlanningMode);
+    setRouteOptimizationMethod(
+      searchHistoryEntry.request.routeOptimizationMethod,
+    );
+    setScenicWeight(searchHistoryEntry.request.scenicWeight);
+    setSnowFreeWeight(searchHistoryEntry.request.snowFreeWeight);
+    setFlatWeight(searchHistoryEntry.request.flatWeight);
 
-    if (entry.request.source === "address") {
-      routePanelRef.current?.setOrigin(entry.request.origin);
-      routePanelRef.current?.setDestination(entry.request.destination);
+    if (searchHistoryEntry.request.source === "address") {
+      routePanelRef.current?.setOrigin(searchHistoryEntry.request.origin);
+      routePanelRef.current?.setDestination(
+        searchHistoryEntry.request.destination,
+      );
     } else {
-      setOriginPosition(entry.request.origin);
-      setDestinationPosition(entry.request.destination);
-      routePanelRef.current?.setOrigin(entry.originLabel);
-      routePanelRef.current?.setDestination(entry.destinationLabel);
+      setOriginPosition(searchHistoryEntry.request.origin);
+      setDestinationPosition(searchHistoryEntry.request.destination);
+      routePanelRef.current?.setOrigin(searchHistoryEntry.originLabel);
+      routePanelRef.current?.setDestination(
+        searchHistoryEntry.destinationLabel,
+      );
     }
 
-    await executeSearch(entry.request);
+    await executeSearch(searchHistoryEntry.request);
   };
 
-  const reverseGeocode = async (kind: MarkerKind, point: Point) => {
+  const reverseGeocode = async (routeEndpoint: RouteEndpoint, point: Point) => {
     const [lon, lat] = point.coordinates;
 
     try {
@@ -637,7 +677,7 @@ const App = () => {
         return;
       }
 
-      if (kind === "origin") {
+      if (routeEndpoint === "origin") {
         routePanelRef.current?.setOrigin(data.address);
 
         return;
@@ -673,11 +713,14 @@ const App = () => {
     }
   };
 
-  const getMarkerPosition = (kind: MarkerKind) =>
-    kind === "origin" ? originPosition : destinationPosition;
+  const getMarkerPosition = (routeEndpoint: RouteEndpoint) =>
+    routeEndpoint === "origin" ? originPosition : destinationPosition;
 
-  const setMarkerPosition = (kind: MarkerKind, point: Point | null) => {
-    if (kind === "origin") {
+  const setMarkerPosition = (
+    routeEndpoint: RouteEndpoint,
+    point: Point | null,
+  ) => {
+    if (routeEndpoint === "origin") {
       setOriginPosition(point);
 
       return;
@@ -686,15 +729,15 @@ const App = () => {
     setDestinationPosition(point);
   };
 
-  const getOtherMarkerPosition = (kind: MarkerKind) =>
-    kind === "origin" ? destinationPosition : originPosition;
+  const getOtherMarkerPosition = (routeEndpoint: RouteEndpoint) =>
+    routeEndpoint === "origin" ? destinationPosition : originPosition;
 
   const applyMarkerUpdate = async (
-    kind: MarkerKind,
+    routeEndpoint: RouteEndpoint,
     position: Point,
     source: MarkerSource,
   ) => {
-    const markerName = kind === "origin" ? "Origin" : "Destination";
+    const markerName = routeEndpoint === "origin" ? "Origin" : "Destination";
 
     if (!boundary || !isInsideBoundary(position, boundary)) {
       setStatusWithTtl(
@@ -706,24 +749,25 @@ const App = () => {
       return false;
     }
 
-    const previousPosition = getMarkerPosition(kind);
-    const otherMarkerPosition = getOtherMarkerPosition(kind);
+    const previousPosition = getMarkerPosition(routeEndpoint);
+    const otherMarkerPosition = getOtherMarkerPosition(routeEndpoint);
 
     if (source === "pick") {
-      setPickMode(null);
+      setActiveRouteEndpoint(null);
     }
 
-    setMarkerPosition(kind, position);
-    await reverseGeocode(kind, position);
+    setMarkerPosition(routeEndpoint, position);
+    await reverseGeocode(routeEndpoint, position);
 
     if (!otherMarkerPosition) {
       return true;
     }
 
-    const origin = kind === "origin" ? position : otherMarkerPosition;
-    const destination = kind === "destination" ? position : otherMarkerPosition;
+    const origin = routeEndpoint === "origin" ? position : otherMarkerPosition;
+    const destination =
+      routeEndpoint === "destination" ? position : otherMarkerPosition;
 
-    const ok = await searchByCoords(origin, destination);
+    const ok = await runCoordinateRouteSearch(origin, destination);
 
     if (ok) {
       return true;
@@ -731,7 +775,7 @@ const App = () => {
 
     setStatusWithTtl(`${markerName} marker could not be set.`, "red", 2000);
 
-    setMarkerPosition(kind, previousPosition ?? null);
+    setMarkerPosition(routeEndpoint, previousPosition ?? null);
 
     return false;
   };
@@ -749,19 +793,21 @@ const App = () => {
     applyMarkerUpdate("destination", position, "pick");
 
   const onTogglePickOrigin = () => {
-    setPickMode((pickMode) => (pickMode === "origin" ? null : "origin"));
+    setActiveRouteEndpoint((activeRouteEndpoint) =>
+      activeRouteEndpoint === "origin" ? null : "origin",
+    );
   };
 
   const onTogglePickDestination = () => {
-    setPickMode((pickMode) =>
-      pickMode === "destination" ? null : "destination",
+    setActiveRouteEndpoint((activeRouteEndpoint) =>
+      activeRouteEndpoint === "destination" ? null : "destination",
     );
   };
 
   const handleClearAll = () => {
     clearScheduledSliderSearch();
 
-    setPickMode(null);
+    setActiveRouteEndpoint(null);
     setOriginPosition(null);
     setDestinationPosition(null);
     setRoutes(undefined);
@@ -776,21 +822,21 @@ const App = () => {
   };
 
   useEffect(() => {
-    if (pickMode === "origin") {
+    if (activeRouteEndpoint === "origin") {
       setStatusWithTtl("Click on the map to place the origin marker.", "grape");
     }
 
-    if (pickMode === "destination") {
+    if (activeRouteEndpoint === "destination") {
       setStatusWithTtl(
         "Click on the map to place the destination marker.",
         "grape",
       );
     }
 
-    if (!pickMode) {
+    if (!activeRouteEndpoint) {
       // setStatusWithTtl("Ready.", "green");
     }
-  }, [destinationPosition, pickMode, originPosition]);
+  }, [destinationPosition, activeRouteEndpoint, originPosition]);
 
   if (boundaryLoading) {
     return (
@@ -842,14 +888,14 @@ const App = () => {
         onOriginDragged={onOriginDragged}
         onDestinationDragged={onDestinationDragged}
         selectedStepIndex={selectedStepIndex}
-        pickMode={pickMode}
+        activeRouteEndpoint={activeRouteEndpoint}
         onPickOrigin={onPickOrigin}
         onPickDestination={onPickDestination}
-        transportMode={transportMode}
+        travelMode={travelMode}
       />
       <RoutePanel
         ref={routePanelRef}
-        searchByAddress={searchByAddress}
+        searchByAddress={runAddressRouteSearch}
         routes={routes}
         loading={routeLoading}
         selectedRouteIndex={selectedRouteIndex}
@@ -866,30 +912,30 @@ const App = () => {
         onSelectStepIndex={setSelectedStepIndex}
         onTogglePickOrigin={onTogglePickOrigin}
         onTogglePickDestination={onTogglePickDestination}
-        pickMode={pickMode}
+        activeRouteEndpoint={activeRouteEndpoint}
         hasOriginMarker={originPosition !== null}
         hasDestinationMarker={destinationPosition !== null}
         onClearAll={handleClearAll}
-        transportMode={transportMode}
-        onTransportModeChange={handleTransportModeChange}
-        mode={mode}
-        onModeChange={handleModeChange}
-        method={method}
-        onMethodChange={handleMethodChange}
-        scenic={scenic}
-        onScenicChange={setScenic}
-        onScenicChangeEnd={handleScenicChangeEnd}
-        snow={snow}
-        onSnowChange={setSnow}
-        onSnowChangeEnd={handleSnowChangeEnd}
-        uphill={uphill}
-        onUphillChange={setUphill}
-        onUphillChangeEnd={handleUphillChangeEnd}
+        travelMode={travelMode}
+        onTravelModeChange={handleTravelModeChange}
+        routePlanningMode={routePlanningMode}
+        onRoutePlanningModeChange={handleRoutePlanningModeChange}
+        routeOptimizationMethod={routeOptimizationMethod}
+        onRouteOptimizationMethodChange={handleRouteOptimizationMethodChange}
+        scenicWeight={scenicWeight}
+        onScenicWeightChange={setScenicWeight}
+        onScenicWeightChangeEnd={handleScenicWeightChangeEnd}
+        snowFreeWeight={snowFreeWeight}
+        onSnowFreeWeightChange={setSnowFreeWeight}
+        onSnowFreeWeightChangeEnd={handleSnowFreeWeightChangeEnd}
+        flatWeight={flatWeight}
+        onFlatWeightChange={setFlatWeight}
+        onFlatWeightChangeEnd={handleFlatWeightChangeEnd}
         searchHistory={searchHistory}
         onSelectHistoryEntry={handleSelectHistoryEntry}
         onClearHistory={removeSearchHistory}
       />
-      <StatusBar message={status} color={statusColor} />
+      <StatusNotice message={status} color={statusColor} />
     </Box>
   );
 };

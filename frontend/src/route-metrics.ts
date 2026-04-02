@@ -1,76 +1,74 @@
 import type {
   RouteFeature,
-  RouteObjectiveCostBreakdown,
-  RouteStepResponse,
+  RoutePenaltyBreakdown,
+  RouteStepSummary,
 } from "@/client";
-import type { TransportMode } from "@/types/global.ts";
+import type { TravelMode } from "@/types/global.ts";
 
-export interface RouteComfortScores {
-  snowlessComfort: number;
-  uphillComfort: number;
-  scenicComfort: number;
+export interface RouteScores {
+  snowFreeScore: number;
+  flatScore: number;
+  scenicScore: number;
 }
 
-export interface RouteProgressionDatum extends RouteComfortScores {
+export interface RouteScoreProfileDatum extends RouteScores {
   stepLabel: string;
 }
 
-export const objectiveScoreLabels = {
-  snowlessComfort: "Snowless",
-  uphillComfort: "Flat",
-  scenicComfort: "Scenic",
-} as const satisfies Record<keyof RouteComfortScores, string>;
+export const routeScoreLabels = {
+  snowFreeScore: "Snow-free",
+  flatScore: "Flat",
+  scenicScore: "Scenic",
+} as const satisfies Record<keyof RouteScores, string>;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 const getFallbackObjectiveCosts = (
   distance: number,
-): RouteObjectiveCostBreakdown => ({
+): RoutePenaltyBreakdown => ({
   distance,
   snow_penalty: distance,
   uphill_penalty: distance,
   scenic_penalty: distance,
 });
 
-export const toComfortPercent = (penalty: number, distance: number) => {
+export const toPercentScore = (score: number, distance: number) => {
   if (distance <= 0) {
     return 0;
   }
 
-  return clamp((1 - penalty / distance) * 100, 0, 100);
+  return clamp((1 - score / distance) * 100, 0, 100);
 };
 
-export const getComfortScores = (
-  objectiveCosts: RouteObjectiveCostBreakdown,
-): RouteComfortScores => ({
-  snowlessComfort: toComfortPercent(
+export const getScoreObject = (
+  objectiveCosts: RoutePenaltyBreakdown,
+): RouteScores => ({
+  snowFreeScore: toPercentScore(
     objectiveCosts.snow_penalty,
     objectiveCosts.distance,
   ),
-  uphillComfort: toComfortPercent(
+  flatScore: toPercentScore(
     objectiveCosts.uphill_penalty,
     objectiveCosts.distance,
   ),
-  scenicComfort: toComfortPercent(
+  scenicScore: toPercentScore(
     objectiveCosts.scenic_penalty,
     objectiveCosts.distance,
   ),
 });
 
-export const getRouteComfortScores = (
-  route: RouteFeature,
-): RouteComfortScores =>
-  getComfortScores(
-    route.properties.objective_costs ??
+export const getRouteScores = (route: RouteFeature): RouteScores =>
+  getScoreObject(
+    route.properties.penalty_breakdown ??
       getFallbackObjectiveCosts(route.properties.distance),
   );
 
-export const getRouteSpeedKmPerHour = (
-  transportMode: TransportMode,
+export const getTravelSpeedKmh = (
+  travelMode: TravelMode,
   walkingSpeed: number,
-  bikingSpeed: number,
-) => (transportMode === "walk" ? walkingSpeed : bikingSpeed);
+  cyclingSpeed: number,
+) => (travelMode === "walking" ? walkingSpeed : cyclingSpeed);
 
 export const estimateRouteDurationMinutes = (
   distanceMeters: number,
@@ -100,7 +98,7 @@ export const formatDuration = (durationMinutes: number) => {
   return `${String(hours)} h ${String(minutes).padStart(2, "0")} min`;
 };
 
-const buildBucketLabel = (startIndex: number, endIndex: number) => {
+const buildStepRangeLabel = (startIndex: number, endIndex: number) => {
   const start = startIndex + 1;
   const end = endIndex + 1;
 
@@ -111,10 +109,10 @@ const buildBucketLabel = (startIndex: number, endIndex: number) => {
   return `${String(start)}-${String(end)}`;
 };
 
-export const buildRouteProgressionData = (
-  steps: RouteStepResponse[],
+export const buildRouteScoreProfile = (
+  steps: RouteStepSummary[],
   maxPoints = 10,
-): RouteProgressionDatum[] => {
+): RouteScoreProfileDatum[] => {
   if (steps.length === 0) {
     return [];
   }
@@ -122,7 +120,7 @@ export const buildRouteProgressionData = (
   const bucketSize =
     steps.length <= maxPoints ? 1 : Math.ceil(steps.length / maxPoints);
 
-  const progressionData: RouteProgressionDatum[] = [];
+  const routeScoreProfile: RouteScoreProfileDatum[] = [];
 
   for (
     let bucketStart = 0;
@@ -132,7 +130,7 @@ export const buildRouteProgressionData = (
     const bucketSteps = steps.slice(bucketStart, bucketStart + bucketSize);
     const bucketObjectiveCosts = bucketSteps.reduce(
       (totals, step) => {
-        const objectiveCosts = step.objective_costs;
+        const objectiveCosts = step.penalty_breakdown;
 
         return {
           distance: totals.distance + objectiveCosts.distance,
@@ -146,17 +144,17 @@ export const buildRouteProgressionData = (
         snow_penalty: 0,
         uphill_penalty: 0,
         scenic_penalty: 0,
-      } satisfies RouteObjectiveCostBreakdown,
+      } satisfies RoutePenaltyBreakdown,
     );
 
-    progressionData.push({
-      stepLabel: buildBucketLabel(
+    routeScoreProfile.push({
+      stepLabel: buildStepRangeLabel(
         bucketStart,
         Math.min(bucketStart + bucketSize - 1, steps.length - 1),
       ),
-      ...getComfortScores(bucketObjectiveCosts),
+      ...getScoreObject(bucketObjectiveCosts),
     });
   }
 
-  return progressionData;
+  return routeScoreProfile;
 };

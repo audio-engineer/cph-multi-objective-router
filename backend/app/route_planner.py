@@ -16,52 +16,52 @@ from networkx.exception import NetworkXNoPath
 
 from app.costs import (
     FALLBACK_EDGE_COST,
-    build_networkx_weight_function,
-    compute_edge_objective_components,
-    normalize_route_objective_weights,
-    select_best_parallel_edge_by_scalar_cost,
-    select_parallel_edge,
+    build_weighted_edge_cost_function,
+    compute_edge_cost_components,
+    normalize_route_preference_weights,
+    select_lowest_cost_parallel_edge,
+    select_parallel_edge_attributes,
 )
 from app.graph_state import (
     LoadedGraphState,
-    get_graph_for_mode,
-    validate_point_within_boundary,
+    get_graph_for_travel_mode,
+    validate_coordinate_within_boundary,
 )
 from app.models import (
-    ParetoPathLabel,
-    RouteComputationOptions,
+    AggregatedRouteStep,
+    ParetoCostVector,
+    ParetoSearchLabel,
     RouteCoordinates,
-    RouteCostVector,
     RouteFeature,
     RouteFeatureCollection,
     RouteMeta,
-    RouteObjectiveCostBreakdown,
-    RouteObjectiveWeights,
+    RoutePenaltyBreakdown,
+    RoutePlanningOptions,
+    RoutePreferenceWeights,
     RouteProperties,
-    RouteStep,
-    RouteStepResponse,
-    TransportMode,
+    RouteStepSummary,
+    TravelMode,
 )
-from app.value_parsing import coerce_float
+from app.value_parsing import parse_float_or_default
 
 if TYPE_CHECKING:
-    from app.typing_aliases import EdgeAttributes, MultiDiGraphAny
+    from app.typing_aliases import EdgeAttributeMap, MultiDiGraphAny
 
 
-type EdgeSelector = Callable[[int, int], EdgeAttributes | None]
+type EdgeSelector = Callable[[int, int], EdgeAttributeMap | None]
 type ShortestPathFunction = Callable[..., list[int]]
 type PathWeightFunction = Callable[..., float | int]
 type NearestNodeFunction = Callable[..., int]
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedRouteCandidate:
+class RouteCandidate:
     """A fully resolved route candidate ready for response serialization."""
 
-    path_node_ids: list[int]
-    segment_edge_attributes: list[EdgeAttributes]
-    total_cost_vector: RouteCostVector
-    selection_score: float
+    node_path: list[int]
+    path_edge_attributes: list[EdgeAttributeMap]
+    total_cost_vector: ParetoCostVector
+    ranking_score: float
     pareto_rank: int | None = None
 
 
@@ -80,7 +80,7 @@ def _coerce_street_component(value: object) -> str | None:
     return str(scalar_value)
 
 
-def _resolve_street_name(edge_attributes: EdgeAttributes) -> str:
+def _resolve_street_name(edge_attributes: EdgeAttributeMap) -> str:
     """Resolve user-facing street label from OSM edge attributes."""
     street_name = _coerce_street_component(edge_attributes.get("name"))
     street_reference = _coerce_street_component(edge_attributes.get("ref"))
@@ -99,39 +99,29 @@ def _resolve_street_name(edge_attributes: EdgeAttributes) -> str:
     return "Unnamed road"
 
 
-def select_shortest_length_edge(
+def _select_shortest_parallel_edge(
     graph: MultiDiGraphAny,
     source_node_id: int,
     target_node_id: int,
-) -> EdgeAttributes | None:
+) -> EdgeAttributeMap | None:
     """Select the shortest parallel edge for a node pair."""
-    return select_parallel_edge(
+    return select_parallel_edge_attributes(
         graph,
         source_node_id,
         target_node_id,
-        ranking_key=lambda edge_attributes: coerce_float(
+        ranking_key=lambda edge_attributes: parse_float_or_default(
             edge_attributes.get("length"),
             default=FALLBACK_EDGE_COST,
         ),
     )
 
 
-def build_route_steps(
+def _resolve_path_edge_attributes(
     path_node_ids: list[int],
     edge_selector: EdgeSelector,
-) -> list[RouteStep]:
-    """Build grouped route steps by merging adjacent segments on the same street."""
-    segment_edge_attributes = resolve_route_segment_edges(path_node_ids, edge_selector)
-
-    return build_route_steps_from_edges(segment_edge_attributes)
-
-
-def resolve_route_segment_edges(
-    path_node_ids: list[int],
-    edge_selector: EdgeSelector,
-) -> list[EdgeAttributes]:
+) -> list[EdgeAttributeMap]:
     """Resolve edge attributes for each segment in a node path."""
-    segment_edge_attributes: list[EdgeAttributes] = []
+    segment_edge_attributes: list[EdgeAttributeMap] = []
 
     for source_node_id, target_node_id in pairwise(path_node_ids):
         edge_attributes = edge_selector(source_node_id, target_node_id)
@@ -149,12 +139,12 @@ def resolve_route_segment_edges(
     return segment_edge_attributes
 
 
-def build_route_steps_from_edges(
-    segment_edge_attributes: list[EdgeAttributes],
-) -> list[RouteStep]:
+def _aggregate_route_steps_from_edges(
+    segment_edge_attributes: list[EdgeAttributeMap],
+) -> list[AggregatedRouteStep]:
     """Build grouped route steps from an ordered edge sequence."""
-    route_steps: list[RouteStep] = []
-    current_step: RouteStep | None = None
+    route_steps: list[AggregatedRouteStep] = []
+    current_step: AggregatedRouteStep | None = None
 
     for segment_index, edge_attributes in enumerate(segment_edge_attributes):
         (
@@ -162,11 +152,11 @@ def build_route_steps_from_edges(
             snow_penalty,
             uphill_penalty,
             scenic_penalty,
-        ) = compute_edge_objective_components(edge_attributes)
+        ) = compute_edge_cost_components(edge_attributes)
         street_name = _resolve_street_name(edge_attributes)
 
         if current_step is None:
-            current_step = RouteStep(
+            current_step = AggregatedRouteStep(
                 street=street_name,
                 distance=segment_distance,
                 segment_index_from=segment_index,
@@ -178,7 +168,7 @@ def build_route_steps_from_edges(
             continue
 
         if street_name == current_step.street:
-            current_step = RouteStep(
+            current_step = AggregatedRouteStep(
                 street=current_step.street,
                 distance=current_step.distance + segment_distance,
                 segment_index_from=current_step.segment_index_from,
@@ -190,7 +180,7 @@ def build_route_steps_from_edges(
             continue
 
         route_steps.append(current_step)
-        current_step = RouteStep(
+        current_step = AggregatedRouteStep(
             street=street_name,
             distance=segment_distance,
             segment_index_from=segment_index,
@@ -206,25 +196,25 @@ def build_route_steps_from_edges(
     return route_steps
 
 
-def compute_weighted_shortest_path(
+def _compute_weighted_shortest_path(
     graph: MultiDiGraphAny,
     origin_node_id: int,
     destination_node_id: int,
-    route_objective_weights: RouteObjectiveWeights,
+    route_preference_weights: RoutePreferenceWeights,
 ) -> list[int]:
     """Compute weighted shortest path using objective-based edge costs."""
-    normalized_weights = normalize_route_objective_weights(route_objective_weights)
+    normalized_weights = normalize_route_preference_weights(route_preference_weights)
     shortest_path = cast("ShortestPathFunction", nx.shortest_path)
 
     return shortest_path(
         graph,
         source=origin_node_id,
         target=destination_node_id,
-        weight=build_networkx_weight_function(normalized_weights),
+        weight=build_weighted_edge_cost_function(normalized_weights),
     )
 
 
-def compute_shortest_distance_path(
+def _compute_shortest_distance_path(
     graph: MultiDiGraphAny,
     origin_node_id: int,
     destination_node_id: int,
@@ -241,8 +231,8 @@ def compute_shortest_distance_path(
 
 
 def dominates_cost_vector(
-    candidate_cost_vector: RouteCostVector,
-    other_cost_vector: RouteCostVector,
+    candidate_cost_vector: ParetoCostVector,
+    other_cost_vector: ParetoCostVector,
 ) -> bool:
     """Return whether one route cost vector Pareto-dominates another."""
     less_equal_all = all(
@@ -265,10 +255,10 @@ def dominates_cost_vector(
     return less_equal_all and less_than_any
 
 
-def is_dominated_by_existing_labels(
-    labels: list[ParetoPathLabel],
+def _is_cost_vector_dominated(
+    labels: list[ParetoSearchLabel],
     existing_label_ids: list[int],
-    candidate_cost_vector: RouteCostVector,
+    candidate_cost_vector: ParetoCostVector,
 ) -> bool:
     """Return whether any existing label dominates the candidate label."""
     return any(
@@ -280,11 +270,11 @@ def is_dominated_by_existing_labels(
     )
 
 
-def build_surviving_label_ids(
-    labels: list[ParetoPathLabel],
+def _prune_label_ids_for_node(
+    labels: list[ParetoSearchLabel],
     existing_label_ids: list[int],
     candidate_label_id: int,
-    candidate_cost_vector: RouteCostVector,
+    candidate_cost_vector: ParetoCostVector,
     max_labels_per_node: int,
 ) -> list[int]:
     """Filter dominated labels and enforce the per-node label cap."""
@@ -314,14 +304,14 @@ def build_surviving_label_ids(
     return surviving_label_ids[:max_labels_per_node]
 
 
-def filter_nondominated_destination_label_ids(
-    labels: list[ParetoPathLabel],
-    target_label_ids: list[int],
+def _select_nondominated_destination_label_ids(
+    labels: list[ParetoSearchLabel],
+    destination_label_ids: list[int],
 ) -> list[int]:
     """Return the nondominated label IDs among destination labels."""
     nondominated_label_ids: list[int] = []
 
-    for label_id in target_label_ids:
+    for label_id in destination_label_ids:
         candidate_cost_vector = labels[label_id].cost_vector
 
         if any(
@@ -329,7 +319,7 @@ def filter_nondominated_destination_label_ids(
                 labels[other_label_id].cost_vector,
                 candidate_cost_vector,
             )
-            for other_label_id in target_label_ids
+            for other_label_id in destination_label_ids
             if other_label_id != label_id
         ):
             continue
@@ -339,19 +329,19 @@ def filter_nondominated_destination_label_ids(
     return nondominated_label_ids
 
 
-def calculate_pareto_frontier_labels(
+def run_pareto_label_search(
     graph: MultiDiGraphAny,
     origin_node_id: int,
     destination_node_id: int,
     *,
     max_labels_per_node: int,
     max_total_labels: int,
-) -> tuple[list[ParetoPathLabel], list[int]]:
+) -> tuple[list[ParetoSearchLabel], list[int]]:
     """Run Martins' label-setting algorithm and return nondominated target labels."""
-    labels: list[ParetoPathLabel] = []
+    labels: list[ParetoSearchLabel] = []
     labels_at: dict[int, list[int]] = {origin_node_id: []}
 
-    start_label = ParetoPathLabel(
+    start_label = ParetoSearchLabel(
         node_id=origin_node_id,
         cost_vector=(0.0, 0.0, 0.0, 0.0),
         previous_label_id=None,
@@ -379,7 +369,7 @@ def calculate_pareto_frontier_labels(
         source_node_id = current_label.node_id
 
         outgoing_edges = cast(
-            "list[tuple[int, int, int, EdgeAttributes]]",
+            "list[tuple[int, int, int, EdgeAttributeMap]]",
             list(
                 graph.out_edges(
                     source_node_id,
@@ -390,7 +380,7 @@ def calculate_pareto_frontier_labels(
         )
 
         for _, target_node_id, parallel_edge_key, edge_attributes in outgoing_edges:
-            edge_cost_vector = compute_edge_objective_components(edge_attributes)
+            edge_cost_vector = compute_edge_cost_components(edge_attributes)
             new_cost_vector = (
                 current_label.cost_vector[0] + edge_cost_vector[0],
                 current_label.cost_vector[1] + edge_cost_vector[1],
@@ -400,7 +390,7 @@ def calculate_pareto_frontier_labels(
 
             existing_label_ids = labels_at.get(target_node_id, [])
 
-            if is_dominated_by_existing_labels(
+            if _is_cost_vector_dominated(
                 labels,
                 existing_label_ids,
                 new_cost_vector,
@@ -408,7 +398,7 @@ def calculate_pareto_frontier_labels(
                 continue
 
             candidate_label_id = len(labels)
-            surviving_label_ids = build_surviving_label_ids(
+            surviving_label_ids = _prune_label_ids_for_node(
                 labels,
                 existing_label_ids,
                 candidate_label_id,
@@ -419,7 +409,7 @@ def calculate_pareto_frontier_labels(
             if candidate_label_id not in surviving_label_ids:
                 continue
 
-            new_label = ParetoPathLabel(
+            new_label = ParetoSearchLabel(
                 node_id=target_node_id,
                 cost_vector=new_cost_vector,
                 previous_label_id=label_id,
@@ -435,11 +425,11 @@ def calculate_pareto_frontier_labels(
 
     target_label_ids = labels_at.get(destination_node_id, [])
 
-    return labels, filter_nondominated_destination_label_ids(labels, target_label_ids)
+    return labels, _select_nondominated_destination_label_ids(labels, target_label_ids)
 
 
-def reconstruct_label_node_path(
-    labels: list[ParetoPathLabel],
+def _reconstruct_node_path_from_label(
+    labels: list[ParetoSearchLabel],
     label_id: int,
 ) -> list[int]:
     """Reconstruct the node path of a Pareto label."""
@@ -455,8 +445,8 @@ def reconstruct_label_node_path(
     return node_path
 
 
-def reconstruct_label_edge_keys(
-    labels: list[ParetoPathLabel],
+def _reconstruct_edge_key_path_from_label(
+    labels: list[ParetoSearchLabel],
     label_id: int,
 ) -> list[tuple[int, int, int]]:
     """Reconstruct the traversed edge keys of a Pareto label."""
@@ -476,10 +466,10 @@ def reconstruct_label_edge_keys(
     return edge_keys
 
 
-def get_edge_attributes_for_edge_key(
+def _get_edge_attributes_by_key(
     graph: MultiDiGraphAny,
     edge_key: tuple[int, int, int],
-) -> EdgeAttributes:
+) -> EdgeAttributeMap:
     """Load edge attributes for a specific parallel edge key."""
     source_node_id, target_node_id, parallel_edge_key = edge_key
     edge_attributes = graph.get_edge_data(
@@ -488,25 +478,25 @@ def get_edge_attributes_for_edge_key(
         parallel_edge_key,
     )
 
-    return cast("EdgeAttributes", edge_attributes)
+    return cast("EdgeAttributeMap", edge_attributes)
 
 
-def sum_route_cost_vectors(
-    segment_edge_attributes: list[EdgeAttributes],
-) -> RouteCostVector:
+def _sum_path_costs(
+    path_edge_attributes: list[EdgeAttributeMap],
+) -> ParetoCostVector:
     """Sum objective cost components across a route."""
     total_distance = 0.0
     total_snow_penalty = 0.0
     total_uphill_penalty = 0.0
     total_scenic_penalty = 0.0
 
-    for edge_attributes in segment_edge_attributes:
+    for edge_attributes in path_edge_attributes:
         (
             distance,
             snow_penalty,
             uphill_penalty,
             scenic_penalty,
-        ) = compute_edge_objective_components(edge_attributes)
+        ) = compute_edge_cost_components(edge_attributes)
         total_distance += distance
         total_snow_penalty += snow_penalty
         total_uphill_penalty += uphill_penalty
@@ -520,68 +510,68 @@ def sum_route_cost_vectors(
     )
 
 
-def compute_route_selection_score(
-    route_cost_vector: RouteCostVector,
-    route_objective_weights: RouteObjectiveWeights,
+def _compute_route_ranking_score(
+    route_cost_vector: ParetoCostVector,
+    route_preference_weights: RoutePreferenceWeights,
 ) -> float:
     """Scalarize a route cost vector using the configured objective weights."""
-    normalized_weights = normalize_route_objective_weights(route_objective_weights)
+    normalized_weights = normalize_route_preference_weights(route_preference_weights)
     distance, snow_penalty, uphill_penalty, scenic_penalty = route_cost_vector
 
     return (
         distance
-        + normalized_weights.avoid_snow * snow_penalty
-        + normalized_weights.avoid_uphill * uphill_penalty
-        + normalized_weights.scenic * scenic_penalty
+        + normalized_weights.snow_free_weight * snow_penalty
+        + normalized_weights.flat_weight * uphill_penalty
+        + normalized_weights.scenic_weight * scenic_penalty
     )
 
 
-def build_resolved_route_candidate(
-    path_node_ids: list[int],
-    segment_edge_attributes: list[EdgeAttributes],
+def _build_route_candidate(
+    node_path: list[int],
+    path_edge_attributes: list[EdgeAttributeMap],
     *,
-    route_objective_weights: RouteObjectiveWeights,
+    route_preference_weights: RoutePreferenceWeights,
     pareto_rank: int | None = None,
-) -> ResolvedRouteCandidate:
+) -> RouteCandidate:
     """Build a resolved route candidate from a path and edge sequence."""
-    total_cost_vector = sum_route_cost_vectors(segment_edge_attributes)
+    total_cost_vector = _sum_path_costs(path_edge_attributes)
 
-    return ResolvedRouteCandidate(
-        path_node_ids=path_node_ids,
-        segment_edge_attributes=segment_edge_attributes,
+    return RouteCandidate(
+        node_path=node_path,
+        path_edge_attributes=path_edge_attributes,
         total_cost_vector=total_cost_vector,
-        selection_score=compute_route_selection_score(
+        ranking_score=_compute_route_ranking_score(
             total_cost_vector,
-            route_objective_weights,
+            route_preference_weights,
         ),
         pareto_rank=pareto_rank,
     )
 
 
-def build_single_route_candidate(
-    path_node_ids: list[int],
+def _build_single_route_candidate(
+    node_path: list[int],
     edge_selector: EdgeSelector,
     *,
-    route_objective_weights: RouteObjectiveWeights,
-) -> ResolvedRouteCandidate:
+    route_preference_weights: RoutePreferenceWeights,
+) -> RouteCandidate:
     """Resolve one shortest/weighted path into a uniform route candidate."""
-    segment_edge_attributes = resolve_route_segment_edges(path_node_ids, edge_selector)
+    segment_edge_attributes = _resolve_path_edge_attributes(node_path, edge_selector)
 
-    return build_resolved_route_candidate(
-        path_node_ids,
+    return _build_route_candidate(
+        node_path,
         segment_edge_attributes,
-        route_objective_weights=route_objective_weights,
+        route_preference_weights=route_preference_weights,
     )
 
 
-def build_pareto_route_candidates(
+def _build_pareto_route_candidates(
     graph: MultiDiGraphAny,
     origin_node_id: int,
     destination_node_id: int,
-    route_options: RouteComputationOptions,
-) -> list[ResolvedRouteCandidate]:
+    route_options: RoutePlanningOptions,
+) -> list[RouteCandidate]:
     """Build sorted pareto-optimal route candidates for a source-destination pair."""
-    labels, destination_label_ids = calculate_pareto_frontier_labels(
+    labels, destination_label_ids = run_pareto_label_search(
         graph,
         origin_node_id,
         destination_node_id,
@@ -594,26 +584,26 @@ def build_pareto_route_candidates(
 
     ranked_label_ids = sorted(
         destination_label_ids,
-        key=lambda label_id: compute_route_selection_score(
+        key=lambda label_id: _compute_route_ranking_score(
             labels[label_id].cost_vector,
-            route_options.objective_weights,
+            route_options.preference_weights,
         ),
     )[: route_options.pareto_max_routes]
 
-    route_candidates: list[ResolvedRouteCandidate] = []
+    route_candidates: list[RouteCandidate] = []
 
     for pareto_rank, label_id in enumerate(ranked_label_ids, start=1):
-        path_node_ids = reconstruct_label_node_path(labels, label_id)
-        edge_keys = reconstruct_label_edge_keys(labels, label_id)
+        path_node_ids = _reconstruct_node_path_from_label(labels, label_id)
+        edge_keys = _reconstruct_edge_key_path_from_label(labels, label_id)
         segment_edge_attributes = [
-            get_edge_attributes_for_edge_key(graph, edge_key) for edge_key in edge_keys
+            _get_edge_attributes_by_key(graph, edge_key) for edge_key in edge_keys
         ]
 
         route_candidates.append(
-            build_resolved_route_candidate(
+            _build_route_candidate(
                 path_node_ids,
                 segment_edge_attributes,
-                route_objective_weights=route_options.objective_weights,
+                route_preference_weights=route_options.preference_weights,
                 pareto_rank=pareto_rank,
             )
         )
@@ -621,138 +611,84 @@ def build_pareto_route_candidates(
     return route_candidates
 
 
-def compute_route_candidates(
+def _plan_route_candidates(
     graph: MultiDiGraphAny,
     origin_node_id: int,
     destination_node_id: int,
-    route_options: RouteComputationOptions,
-) -> list[ResolvedRouteCandidate]:
+    route_options: RoutePlanningOptions,
+) -> list[RouteCandidate]:
     """Compute resolved route candidates for the selected routing method."""
-    if route_options.route_selection_method == "weighted":
-        path_node_ids = compute_weighted_shortest_path(
+    if route_options.route_optimization_method == "weighted":
+        path_node_ids = _compute_weighted_shortest_path(
             graph,
             origin_node_id,
             destination_node_id,
-            route_options.objective_weights,
+            route_options.preference_weights,
         )
 
         return [
-            build_single_route_candidate(
+            _build_single_route_candidate(
                 path_node_ids,
                 edge_selector=lambda source_node_id, target_node_id: (
-                    select_best_parallel_edge_by_scalar_cost(
+                    select_lowest_cost_parallel_edge(
                         graph,
                         source_node_id,
                         target_node_id,
-                        normalize_route_objective_weights(
-                            route_options.objective_weights
+                        normalize_route_preference_weights(
+                            route_options.preference_weights
                         ),
                     )
                 ),
-                route_objective_weights=route_options.objective_weights,
+                route_preference_weights=route_options.preference_weights,
             )
         ]
 
-    if route_options.route_selection_method == "pareto":
-        return build_pareto_route_candidates(
+    if route_options.route_optimization_method == "pareto":
+        return _build_pareto_route_candidates(
             graph,
             origin_node_id,
             destination_node_id,
             route_options,
         )
 
-    path_node_ids = compute_shortest_distance_path(
+    path_node_ids = _compute_shortest_distance_path(
         graph,
         origin_node_id,
         destination_node_id,
     )
 
     return [
-        build_single_route_candidate(
+        _build_single_route_candidate(
             path_node_ids,
             edge_selector=lambda source_node_id, target_node_id: (
-                select_shortest_length_edge(graph, source_node_id, target_node_id)
+                _select_shortest_parallel_edge(graph, source_node_id, target_node_id)
             ),
-            route_objective_weights=RouteObjectiveWeights(),
+            route_preference_weights=RoutePreferenceWeights(),
         )
     ]
 
 
-def compute_route_path(
+def _build_route_geometry_coordinates(
     graph: MultiDiGraphAny,
-    origin_node_id: int,
-    destination_node_id: int,
-    route_options: RouteComputationOptions,
-) -> list[int]:
-    """Compute the primary path according to the selected route method."""
-    route_candidates = compute_route_candidates(
-        graph,
-        origin_node_id,
-        destination_node_id,
-        route_options,
-    )
-
-    if not route_candidates:
-        raise NetworkXNoPath
-
-    return route_candidates[0].path_node_ids
-
-
-def compute_route_steps_for_method(
-    graph: MultiDiGraphAny,
-    path_node_ids: list[int],
-    route_options: RouteComputationOptions,
-) -> list[RouteStep]:
-    """Build route steps for single-path routing methods."""
-    if route_options.route_selection_method == "weighted":
-        normalized_weights = normalize_route_objective_weights(
-            route_options.objective_weights
-        )
-
-        return build_route_steps(
-            path_node_ids,
-            edge_selector=lambda source_node_id, target_node_id: (
-                select_best_parallel_edge_by_scalar_cost(
-                    graph,
-                    source_node_id,
-                    target_node_id,
-                    normalized_weights,
-                )
-            ),
-        )
-
-    if route_options.route_selection_method == "pareto":
-        return []
-
-    return build_route_steps(
-        path_node_ids,
-        edge_selector=lambda source_node_id, target_node_id: (
-            select_shortest_length_edge(graph, source_node_id, target_node_id)
-        ),
-    )
-
-
-def _build_path_coordinates(
-    graph: MultiDiGraphAny,
-    path_node_ids: list[int],
+    node_path: list[int],
 ) -> list[Position2D | Position3D]:
     """Build route line coordinates from graph node IDs."""
     coordinates: list[Position2D | Position3D] = []
 
-    for node_id in path_node_ids:
+    for node_id in node_path:
         node_attributes = graph.nodes[node_id]
-        longitude = coerce_float(node_attributes.get("x"), default=0.0)
-        latitude = coerce_float(node_attributes.get("y"), default=0.0)
+        longitude = parse_float_or_default(node_attributes.get("x"), default=0.0)
+        latitude = parse_float_or_default(node_attributes.get("y"), default=0.0)
         coordinates.append(Position2D(longitude, latitude))
 
     return coordinates
 
 
-def _build_node_point(graph: MultiDiGraphAny, node_id: int) -> PydanticPoint:
+def _build_node_point_feature(graph: MultiDiGraphAny, node_id: int) -> PydanticPoint:
     """Build a GeoJSON Point from a graph node."""
     node_attributes = graph.nodes[node_id]
-    longitude = coerce_float(node_attributes.get("x"), default=0.0)
-    latitude = coerce_float(node_attributes.get("y"), default=0.0)
+    longitude = parse_float_or_default(node_attributes.get("x"), default=0.0)
+    latitude = parse_float_or_default(node_attributes.get("y"), default=0.0)
 
     return PydanticPoint(
         type="Point",
@@ -778,15 +714,17 @@ def _find_nearest_node_id(
     )
 
 
-def build_route_step_responses(route_steps: list[RouteStep]) -> list[RouteStepResponse]:
+def _build_route_step_summaries(
+    route_steps: list[AggregatedRouteStep],
+) -> list[RouteStepSummary]:
     """Convert internal route steps into response models."""
     return [
-        RouteStepResponse(
+        RouteStepSummary(
             street=route_step.street,
             distance=route_step.distance,
             segment_index_from=route_step.segment_index_from,
             segment_index_to=route_step.segment_index_to,
-            objective_costs=RouteObjectiveCostBreakdown(
+            penalty_breakdown=RoutePenaltyBreakdown(
                 distance=route_step.distance,
                 snow_penalty=route_step.snow_penalty,
                 uphill_penalty=route_step.uphill_penalty,
@@ -797,13 +735,13 @@ def build_route_step_responses(route_steps: list[RouteStep]) -> list[RouteStepRe
     ]
 
 
-def build_route_objective_cost_breakdown(
-    route_cost_vector: RouteCostVector,
-) -> RouteObjectiveCostBreakdown:
+def _build_route_penalty_breakdown(
+    pareto_cost_vector: ParetoCostVector,
+) -> RoutePenaltyBreakdown:
     """Convert a route cost vector into a named response object."""
-    distance, snow_penalty, uphill_penalty, scenic_penalty = route_cost_vector
+    distance, snow_penalty, uphill_penalty, scenic_penalty = pareto_cost_vector
 
-    return RouteObjectiveCostBreakdown(
+    return RoutePenaltyBreakdown(
         distance=distance,
         snow_penalty=snow_penalty,
         uphill_penalty=uphill_penalty,
@@ -811,30 +749,34 @@ def build_route_objective_cost_breakdown(
     )
 
 
-def build_route_feature(
+def _build_route_feature(
     graph: MultiDiGraphAny,
-    route_candidate: ResolvedRouteCandidate,
+    route_candidate: RouteCandidate,
     *,
     route_index: int,
 ) -> RouteFeature:
     """Serialize one resolved route candidate into a GeoJSON route feature."""
-    route_steps = build_route_steps_from_edges(route_candidate.segment_edge_attributes)
+    route_steps = _aggregate_route_steps_from_edges(
+        route_candidate.path_edge_attributes
+    )
 
     return RouteFeature(
         type="Feature",
         properties=RouteProperties(
             route_index=route_index,
             distance=route_candidate.total_cost_vector[0],
-            steps=build_route_step_responses(route_steps),
-            objective_costs=build_route_objective_cost_breakdown(
+            steps=_build_route_step_summaries(route_steps),
+            penalty_breakdown=_build_route_penalty_breakdown(
                 route_candidate.total_cost_vector
             ),
             pareto_rank=route_candidate.pareto_rank,
-            selection_score=route_candidate.selection_score,
+            selection_score=route_candidate.ranking_score,
         ),
         geometry=PydanticLineString(
             type="LineString",
-            coordinates=_build_path_coordinates(graph, route_candidate.path_node_ids),
+            coordinates=_build_route_geometry_coordinates(
+                graph, route_candidate.node_path
+            ),
         ),
     )
 
@@ -843,18 +785,18 @@ def build_route_feature_collection(
     *,
     graph_state: LoadedGraphState,
     route_coordinates: RouteCoordinates,
-    transport_mode: TransportMode,
-    route_options: RouteComputationOptions,
+    travel_mode: TravelMode,
+    route_options: RoutePlanningOptions,
 ) -> RouteFeatureCollection:
     """Build a route FeatureCollection response for a request."""
-    graph = get_graph_for_mode(graph_state, transport_mode)
+    graph = get_graph_for_travel_mode(graph_state, travel_mode)
 
-    validate_point_within_boundary(
+    validate_coordinate_within_boundary(
         graph_state,
         route_coordinates.origin_longitude,
         route_coordinates.origin_latitude,
     )
-    validate_point_within_boundary(
+    validate_coordinate_within_boundary(
         graph_state,
         route_coordinates.destination_longitude,
         route_coordinates.destination_latitude,
@@ -878,7 +820,7 @@ def build_route_feature_collection(
         ) from exception
 
     try:
-        route_candidates = compute_route_candidates(
+        route_candidates = _plan_route_candidates(
             graph,
             origin_node_id,
             destination_node_id,
@@ -898,7 +840,7 @@ def build_route_feature_collection(
     return RouteFeatureCollection(
         type="FeatureCollection",
         features=[
-            build_route_feature(
+            _build_route_feature(
                 graph,
                 route_candidate,
                 route_index=route_index,
@@ -906,9 +848,9 @@ def build_route_feature_collection(
             for route_index, route_candidate in enumerate(route_candidates)
         ],
         meta=RouteMeta(
-            origin=_build_node_point(graph, origin_node_id),
-            destination=_build_node_point(graph, destination_node_id),
-            route_selection_method=route_options.route_selection_method,
+            origin=_build_node_point_feature(graph, origin_node_id),
+            destination=_build_node_point_feature(graph, destination_node_id),
+            route_optimization_method=route_options.route_optimization_method,
             route_count=len(route_candidates),
             recommended_route_index=0,
         ),

@@ -31,32 +31,34 @@ import {
 import type {
   RouteFeature,
   RouteFeatureCollection,
-  RouteStepResponse,
+  RouteStepSummary,
 } from "@/client";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png?url";
-import type { TransportMode } from "@/types/global.ts";
-import type { RouteSelectionMethod, Mode, SearchHistoryEntry } from "@/App.tsx";
+import type { ActiveRouteEndpoint, TravelMode } from "@/types/global.ts";
+import type {
+  RouteOptimizationMethod,
+  RoutePlanningMode,
+  SearchHistoryEntry,
+} from "@/App.tsx";
 import {
-  buildRouteProgressionData,
+  buildRouteScoreProfile,
   estimateRouteDurationMinutes,
   formatDuration,
-  getRouteComfortScores,
-  getRouteSpeedKmPerHour,
-  objectiveScoreLabels,
+  getRouteScores,
+  getTravelSpeedKmh,
+  routeScoreLabels,
 } from "@/route-metrics.ts";
 import { getRouteColor } from "@/utils.ts";
-import { RouteStatsPanel } from "@/RouteStatsPanel.tsx";
+import { RouteAnalysisPanel } from "@/RouteAnalysisPanel.tsx";
 import {
   CartesianGrid,
-  Tooltip as RechartsTooltip,
+  Legend,
   Line,
   LineChart,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
-  Legend,
 } from "recharts";
-
-export type PickMode = "origin" | "destination" | null;
 
 export interface RoutePanelHandle {
   setOrigin: (origin: string) => void;
@@ -83,22 +85,24 @@ interface RoutePanelProps {
   onClearAll: () => void;
   hasOriginMarker: boolean;
   hasDestinationMarker: boolean;
-  pickMode: PickMode;
-  transportMode: TransportMode;
-  onTransportModeChange: (transportMode: TransportMode) => void;
-  mode: Mode;
-  onModeChange: (mode: Mode) => void;
-  method: RouteSelectionMethod;
-  onMethodChange: (method: RouteSelectionMethod) => void;
-  scenic: number;
-  onScenicChange: (scenic: number) => void;
-  onScenicChangeEnd: (scenic: number) => void;
-  snow: number;
-  onSnowChange: (snow: number) => void;
-  onSnowChangeEnd: (snow: number) => void;
-  uphill: number;
-  onUphillChange: (uphill: number) => void;
-  onUphillChangeEnd: (uphill: number) => void;
+  activeRouteEndpoint: ActiveRouteEndpoint;
+  travelMode: TravelMode;
+  onTravelModeChange: (travelMode: TravelMode) => void;
+  routePlanningMode: RoutePlanningMode;
+  onRoutePlanningModeChange: (routePlanningMode: RoutePlanningMode) => void;
+  routeOptimizationMethod: RouteOptimizationMethod;
+  onRouteOptimizationMethodChange: (
+    routeOptimizationMethod: RouteOptimizationMethod,
+  ) => void;
+  scenicWeight: number;
+  onScenicWeightChange: (scenicWeight: number) => void;
+  onScenicWeightChangeEnd: (scenicWeight: number) => void;
+  snowFreeWeight: number;
+  onSnowFreeWeightChange: (snowFreeWeight: number) => void;
+  onSnowFreeWeightChangeEnd: (snowFreeWeight: number) => void;
+  flatWeight: number;
+  onFlatWeightChange: (flatWeight: number) => void;
+  onFlatWeightChangeEnd: (flatWeight: number) => void;
   searchHistory: SearchHistoryEntry[];
   onSelectHistoryEntry: (entry: SearchHistoryEntry) => Promise<void>;
   onClearHistory: () => void;
@@ -115,9 +119,9 @@ const distanceToText = (distance: number) => {
 const getRouteTitle = (
   route: RouteFeature,
   routeCount: number,
-  method: RouteSelectionMethod,
+  routeOptimizationMethod: RouteOptimizationMethod,
 ) => {
-  if (method === "pareto") {
+  if (routeOptimizationMethod === "pareto") {
     const routeRank =
       route.properties.pareto_rank ?? route.properties.route_index + 1;
 
@@ -142,37 +146,37 @@ const formatTooltipPercent = (value: TooltipValue) => {
   return formatPercent(numericValue);
 };
 
-const objectiveBadgeConfig = [
+const scoreBadgeConfig = [
   {
-    key: "uphillComfort",
-    label: objectiveScoreLabels.uphillComfort,
+    key: "flatScore",
+    label: routeScoreLabels.flatScore,
     color: "green",
   },
   {
-    key: "scenicComfort",
-    label: objectiveScoreLabels.scenicComfort,
+    key: "scenicScore",
+    label: routeScoreLabels.scenicScore,
     color: "orange",
   },
   {
-    key: "snowlessComfort",
-    label: objectiveScoreLabels.snowlessComfort,
+    key: "snowFreeScore",
+    label: routeScoreLabels.snowFreeScore,
     color: "cyan",
   },
 ] as const;
 
-const RouteObjectiveBadges = ({ route }: { route: RouteFeature }) => {
-  const comfortScores = getRouteComfortScores(route);
+const RouteScoreBadges = ({ route }: { route: RouteFeature }) => {
+  const routeScores = getRouteScores(route);
 
   return (
     <Group gap={6}>
-      {objectiveBadgeConfig.map((objective) => (
+      {scoreBadgeConfig.map((scoreBadge) => (
         <Badge
-          key={objective.key}
+          key={scoreBadge.key}
           variant="light"
-          color={objective.color}
+          color={scoreBadge.color}
           size="sm"
         >
-          {objective.label} {formatPercent(comfortScores[objective.key])}
+          {scoreBadge.label} {formatPercent(routeScores[scoreBadge.key])}
         </Badge>
       ))}
     </Group>
@@ -184,7 +188,7 @@ const RouteStepList = ({
   selectedStepIndex,
   onSelectStepIndex,
 }: {
-  steps: RouteStepResponse[];
+  steps: RouteStepSummary[];
   selectedStepIndex: number | null;
   onSelectStepIndex: (index: number | null) => void;
 }) => (
@@ -242,51 +246,55 @@ export const RoutePanel = ({
   onTogglePickDestination,
   hasOriginMarker,
   hasDestinationMarker,
-  pickMode,
+  activeRouteEndpoint,
   onClearAll,
-  transportMode,
-  onTransportModeChange,
-  mode,
-  onModeChange,
-  method,
-  onMethodChange,
-  scenic,
-  onScenicChange,
-  onScenicChangeEnd,
-  snow,
-  onSnowChange,
-  onSnowChangeEnd,
-  uphill,
-  onUphillChange,
-  onUphillChangeEnd,
+  travelMode,
+  onTravelModeChange,
+  routePlanningMode,
+  onRoutePlanningModeChange,
+  routeOptimizationMethod,
+  onRouteOptimizationMethodChange,
+  scenicWeight,
+  onScenicWeightChange,
+  onScenicWeightChangeEnd,
+  snowFreeWeight,
+  onSnowFreeWeightChange,
+  onSnowFreeWeightChangeEnd,
+  flatWeight,
+  onFlatWeightChange,
+  onFlatWeightChangeEnd,
   searchHistory,
   onSelectHistoryEntry,
   onClearHistory,
 }: RoutePanelProps) => {
+  const [isAnalysisPanelOpen, setIsAnalysisPanelOpen] = useState(false);
+  const [walkingSpeedKmh, setWalkingSpeedKmh] = useState(5);
+  const [cyclingSpeedKmh, setCyclingSpeedKmh] = useState(15);
+
   const routeList = routes?.features ?? [];
   const routeCount = routeList.length;
   const hasRoute = routeCount > 0;
-  const shouldConstrainPanel = mode === "advanced" || hasRoute;
-  const detailOpen = selectedRouteIndex != null && selectedRoute != null;
+  const shouldConstrainPanel =
+    routePlanningMode === "multi-objective" || hasRoute;
+  const isRouteDetailOpen = selectedRouteIndex != null && selectedRoute != null;
   const clearDisabled = !hasOriginMarker && !hasDestinationMarker;
   const selectedRouteSteps = selectedRoute?.properties.steps ?? [];
-  const [statsOpen, setStatsOpen] = useState(false);
-  const statsVisible = statsOpen && routes != null;
-  const [walkingSpeed, setWalkingSpeed] = useState(5);
-  const [bikingSpeed, setBikingSpeed] = useState(15);
-  const routeSpeedKmPerHour = getRouteSpeedKmPerHour(
-    transportMode,
-    walkingSpeed,
-    bikingSpeed,
-  );
-  const getEstimatedTimeLabel = (distanceMeters: number) =>
-    formatDuration(
-      estimateRouteDurationMinutes(distanceMeters, routeSpeedKmPerHour),
-    );
-  const selectedRouteProgressionData =
-    buildRouteProgressionData(selectedRouteSteps);
+  const isAnalysisPanelVisible = isAnalysisPanelOpen && routes != null;
 
-  const form = useForm({
+  const travelSpeedKmh = getTravelSpeedKmh(
+    travelMode,
+    walkingSpeedKmh,
+    cyclingSpeedKmh,
+  );
+
+  const formatEstimatedDuration = (distanceMeters: number) =>
+    formatDuration(
+      estimateRouteDurationMinutes(distanceMeters, travelSpeedKmh),
+    );
+
+  const selectedRouteScoreProfile = buildRouteScoreProfile(selectedRouteSteps);
+
+  const searchForm = useForm({
     mode: "uncontrolled",
     initialValues: {
       origin: "",
@@ -298,20 +306,20 @@ export const RoutePanel = ({
     ref,
     () => ({
       setOrigin: (origin: string) => {
-        form.setFieldValue("origin", origin);
+        searchForm.setFieldValue("origin", origin);
       },
       setDestination: (destination: string) => {
-        form.setFieldValue("destination", destination);
+        searchForm.setFieldValue("destination", destination);
       },
       clearAllFields: () => {
-        form.setFieldValue("origin", "");
-        form.setFieldValue("destination", "");
+        searchForm.setFieldValue("origin", "");
+        searchForm.setFieldValue("destination", "");
       },
     }),
-    [form],
+    [searchForm],
   );
 
-  const routeOverviewList = (
+  const routeCards = (
     <Stack gap="xs">
       {routeList.map((route) => {
         const routeIndex = route.properties.route_index;
@@ -340,7 +348,11 @@ export const RoutePanel = ({
                   <Group justify="space-between">
                     <Group>
                       <Text fw={600}>
-                        {getRouteTitle(route, routeCount, method)}
+                        {getRouteTitle(
+                          route,
+                          routeCount,
+                          routeOptimizationMethod,
+                        )}
                       </Text>
                       {recommendedRoute && (
                         <IconStarFilled size="1rem" color="gold" />
@@ -351,9 +363,9 @@ export const RoutePanel = ({
                     </Badge>
                   </Group>
                   <Text size="sm" c="dimmed" mb="xs">
-                    {getEstimatedTimeLabel(route.properties.distance)}
+                    {formatEstimatedDuration(route.properties.distance)}
                   </Text>
-                  <RouteObjectiveBadges route={route} />
+                  <RouteScoreBadges route={route} />
                 </Stack>
               </Group>
             </Paper>
@@ -375,14 +387,14 @@ export const RoutePanel = ({
           <IconChevronLeft size="2rem" />
         </ActionIcon>
         <Title order={3}>
-          {getRouteTitle(selectedRoute, routeCount, method)}
+          {getRouteTitle(selectedRoute, routeCount, routeOptimizationMethod)}
         </Title>
       </Group>
 
       {selectedRouteSteps.length > 0 ? (
         <Stack gap="xs">
           <Paper withBorder radius="md" p="sm">
-            <Title order={4}>Info</Title>
+            <Title order={4}>Overview</Title>
             <Stack gap="sm">
               <Group justify="space-between">
                 <Text fw={600}>Total Distance</Text>
@@ -394,12 +406,12 @@ export const RoutePanel = ({
                 <Stack gap={0}>
                   <Text fw={600}>Estimated Time</Text>
                   <Text size="sm" c="dimmed" w={200}>
-                    Based on {String(routeSpeedKmPerHour)} km/h average{" "}
-                    {transportMode === "walk" ? "walking" : "biking"} speed
+                    Based on {String(travelSpeedKmh)} km/h average{" "}
+                    {travelMode === "walking" ? "walking" : "cycling"} speed
                   </Text>
                 </Stack>
                 <Text fw={800}>
-                  {getEstimatedTimeLabel(selectedRoute.properties.distance)}
+                  {formatEstimatedDuration(selectedRoute.properties.distance)}
                 </Text>
               </Group>
               <Stack gap={0}>
@@ -407,15 +419,15 @@ export const RoutePanel = ({
                 <Text size="sm" c="dimmed" mb="xs">
                   Higher is better
                 </Text>
-                <RouteObjectiveBadges route={selectedRoute} />
+                <RouteScoreBadges route={selectedRoute} />
               </Stack>
             </Stack>
           </Paper>
 
           <Paper withBorder radius="md" p="sm">
-            <Title order={4}>Progression</Title>
+            <Title order={4}>Score Profile</Title>
             <Text size="sm" c="dimmed" mb="sm">
-              Scores throughout the route
+              Scores along the route
             </Text>
             <LineChart
               style={{
@@ -423,7 +435,7 @@ export const RoutePanel = ({
                 aspectRatio: 1.6,
               }}
               responsive
-              data={selectedRouteProgressionData}
+              data={selectedRouteScoreProfile}
               margin={{
                 top: 5,
                 right: 8,
@@ -442,8 +454,8 @@ export const RoutePanel = ({
               <Legend />
               <Line
                 type="monotone"
-                dataKey="uphillComfort"
-                name={objectiveScoreLabels.uphillComfort}
+                dataKey="flatScore"
+                name={routeScoreLabels.flatScore}
                 stroke="#2b8a3e"
                 strokeWidth={2}
                 dot={false}
@@ -451,8 +463,8 @@ export const RoutePanel = ({
               />
               <Line
                 type="monotone"
-                dataKey="scenicComfort"
-                name={objectiveScoreLabels.scenicComfort}
+                dataKey="scenicScore"
+                name={routeScoreLabels.scenicScore}
                 stroke="#f08c00"
                 strokeWidth={2}
                 dot={false}
@@ -460,8 +472,8 @@ export const RoutePanel = ({
               />
               <Line
                 type="monotone"
-                dataKey="snowlessComfort"
-                name={objectiveScoreLabels.snowlessComfort}
+                dataKey="snowFreeScore"
+                name={routeScoreLabels.snowFreeScore}
                 stroke="#1c7ed6"
                 strokeWidth={2}
                 dot={false}
@@ -487,7 +499,7 @@ export const RoutePanel = ({
     <Box />
   );
 
-  const routeListSection = hasRoute ? (
+  const routeResultsSection = hasRoute ? (
     <>
       <Divider my="md" />
       <Group justify="space-between" mb="md">
@@ -499,24 +511,24 @@ export const RoutePanel = ({
         </Group>
         <Button
           size="xs"
-          variant={statsVisible ? "filled" : "light"}
+          variant={isAnalysisPanelVisible ? "filled" : "light"}
           color="grape"
           onClick={() => {
-            setStatsOpen((currentOpen) => !currentOpen);
+            setIsAnalysisPanelOpen((currentOpen) => !currentOpen);
           }}
           leftSection={<IconChartDots size="1rem" />}
         >
-          Statistics
+          {routeCount === 1 ? "Analysis" : "Comparison"}
         </Button>
       </Group>
-      {routeOverviewList}
+      {routeCards}
     </>
   ) : null;
 
   const searchPane = (
-    <Box w="100%" pr={detailOpen ? 8 : 0} miw={0}>
+    <Box w="100%" pr={isRouteDetailOpen ? 8 : 0} miw={0}>
       <form
-        onSubmit={form.onSubmit((values) => {
+        onSubmit={searchForm.onSubmit((values) => {
           void searchByAddress(values.origin, values.destination);
         })}
       >
@@ -526,13 +538,13 @@ export const RoutePanel = ({
             placeholder="Origin"
             mt="md"
             flex={1}
-            key={form.key("origin")}
-            {...form.getInputProps("origin")}
+            key={searchForm.key("origin")}
+            {...searchForm.getInputProps("origin")}
           />
           <Tooltip label="Pick origin point on map" zIndex={2000} withArrow>
             <ActionIcon
               size="lg"
-              variant={pickMode === "origin" ? "filled" : "light"}
+              variant={activeRouteEndpoint === "origin" ? "filled" : "light"}
               onClick={onTogglePickOrigin}
             >
               <Image alt="" src={markerIconUrl} w={12} h={20} />
@@ -546,13 +558,15 @@ export const RoutePanel = ({
             placeholder="Destination"
             mt="md"
             flex={1}
-            key={form.key("destination")}
-            {...form.getInputProps("destination")}
+            key={searchForm.key("destination")}
+            {...searchForm.getInputProps("destination")}
           />
           <Tooltip label="Pick end point on map" zIndex={2000} withArrow>
             <ActionIcon
               size="lg"
-              variant={pickMode === "destination" ? "filled" : "light"}
+              variant={
+                activeRouteEndpoint === "destination" ? "filled" : "light"
+              }
               onClick={onTogglePickDestination}
             >
               <Image alt="" src={markerIconUrl} w={12} h={20} />
@@ -572,22 +586,22 @@ export const RoutePanel = ({
         </Button>
 
         <Text mt="md" py="xs">
-          Transport
+          Travel Mode
         </Text>
         <SegmentedControl
-          value={transportMode}
+          value={travelMode}
           onChange={(value) => {
-            onTransportModeChange(value as TransportMode);
+            onTravelModeChange(value as TravelMode);
           }}
           fullWidth
           data={[
-            { label: "Walking", value: "walk" },
-            { label: "Bike", value: "bike" },
+            { label: "Walking", value: "walking" },
+            { label: "Cycling", value: "cycling" },
           ]}
         />
 
         <Group mt="md" py="xs">
-          <Text>Mode</Text>
+          <Text>Optimization</Text>
           <Tooltip
             label="Select whether you want to optimize the route for distance or multiple objectives"
             zIndex={2000}
@@ -600,23 +614,25 @@ export const RoutePanel = ({
         </Group>
 
         <SegmentedControl
-          value={mode}
+          value={routePlanningMode}
           onChange={(value) => {
-            onModeChange(value as Mode);
+            onRoutePlanningModeChange(value as RoutePlanningMode);
           }}
           fullWidth
           data={[
             { label: "Shortest", value: "shortest" },
-            { label: "Advanced", value: "advanced" },
+            { label: "Multi-objective", value: "multi-objective" },
           ]}
         />
 
-        {mode === "advanced" && (
+        {routePlanningMode === "multi-objective" && (
           <>
             <SegmentedControl
-              value={method}
+              value={routeOptimizationMethod}
               onChange={(value) => {
-                onMethodChange(value as RouteSelectionMethod);
+                onRouteOptimizationMethodChange(
+                  value as RouteOptimizationMethod,
+                );
               }}
               fullWidth
               mt="md"
@@ -626,15 +642,15 @@ export const RoutePanel = ({
               ]}
             />
 
-            <Text mt="md">Scenic</Text>
+            <Text mt="md">Prefer Scenic</Text>
             <Slider
               color="blue"
               size="xl"
               mt="sm"
               mb="lg"
-              value={scenic}
-              onChange={onScenicChange}
-              onChangeEnd={onScenicChangeEnd}
+              value={scenicWeight}
+              onChange={onScenicWeightChange}
+              onChangeEnd={onScenicWeightChangeEnd}
               marks={[
                 { value: 25, label: "25%" },
                 { value: 50, label: "50%" },
@@ -642,15 +658,15 @@ export const RoutePanel = ({
               ]}
             />
 
-            <Text mt="md">Avoid Snow</Text>
+            <Text mt="md">Prefer Snow-free</Text>
             <Slider
               color="blue"
               size="xl"
               mt="sm"
               mb="lg"
-              value={snow}
-              onChange={onSnowChange}
-              onChangeEnd={onSnowChangeEnd}
+              value={snowFreeWeight}
+              onChange={onSnowFreeWeightChange}
+              onChangeEnd={onSnowFreeWeightChangeEnd}
               marks={[
                 { value: 25, label: "25%" },
                 { value: 50, label: "50%" },
@@ -658,15 +674,15 @@ export const RoutePanel = ({
               ]}
             />
 
-            <Text mt="md">Avoid Uphill</Text>
+            <Text mt="md">Avoid Hills</Text>
             <Slider
               color="blue"
               size="xl"
               mt="sm"
               mb="lg"
-              value={uphill}
-              onChange={onUphillChange}
-              onChangeEnd={onUphillChangeEnd}
+              value={flatWeight}
+              onChange={onFlatWeightChange}
+              onChangeEnd={onFlatWeightChangeEnd}
               marks={[
                 { value: 25, label: "25%" },
                 { value: 50, label: "50%" },
@@ -678,14 +694,18 @@ export const RoutePanel = ({
 
         <Button
           mt="md"
-          disabled={loading || !form.values.origin || !form.values.destination}
+          disabled={
+            loading ||
+            !searchForm.values.origin ||
+            !searchForm.values.destination
+          }
           type="submit"
         >
           {loading ? "Searching..." : "Search"}
         </Button>
       </form>
 
-      {routeListSection}
+      {routeResultsSection}
     </Box>
   );
 
@@ -693,7 +713,7 @@ export const RoutePanel = ({
     <Tabs.Panel value="search">
       <Box style={{ overflow: "hidden" }} miw={0}>
         <Transition
-          mounted={!detailOpen}
+          mounted={!isRouteDetailOpen}
           transition="slide-right"
           duration={220}
           timingFunction="ease"
@@ -705,7 +725,7 @@ export const RoutePanel = ({
           )}
         </Transition>
         <Transition
-          mounted={detailOpen}
+          mounted={isRouteDetailOpen}
           transition="slide-left"
           duration={220}
           timingFunction="ease"
@@ -757,12 +777,14 @@ export const RoutePanel = ({
 
                 <Group gap="xs" mt="xs">
                   <Badge variant="light">
-                    {entry.request.transportMode === "walk" ? "Walk" : "Bike"}
+                    {entry.request.travelMode === "walking"
+                      ? "Walking"
+                      : "Cycling"}
                   </Badge>
                   <Badge variant="light">
-                    {entry.request.mode === "shortest"
+                    {entry.request.routePlanningMode === "shortest"
                       ? "Shortest"
-                      : entry.request.method === "weighted"
+                      : entry.request.routeOptimizationMethod === "weighted"
                         ? "Weighted"
                         : "Pareto"}
                   </Badge>
@@ -787,8 +809,8 @@ export const RoutePanel = ({
         size="xl"
         mt="sm"
         mb="lg"
-        value={walkingSpeed}
-        onChange={setWalkingSpeed}
+        value={walkingSpeedKmh}
+        onChange={setWalkingSpeedKmh}
         domain={[1, 10]}
         min={1}
         max={10}
@@ -798,14 +820,14 @@ export const RoutePanel = ({
           { value: 10, label: "10" },
         ]}
       />
-      <Text mt="xl">Biking Speed (in km/h)</Text>
+      <Text mt="xl">Cycling Speed (in km/h)</Text>
       <Slider
         color="blue"
         size="xl"
         mt="sm"
         mb="lg"
-        value={bikingSpeed}
-        onChange={setBikingSpeed}
+        value={cyclingSpeedKmh}
+        onChange={setCyclingSpeedKmh}
         domain={[1, 30]}
         min={1}
         max={30}
@@ -838,8 +860,8 @@ export const RoutePanel = ({
         radius="md"
         style={{
           zIndex: 1000,
-          borderTopRightRadius: statsVisible ? 0 : undefined,
-          borderBottomRightRadius: statsVisible ? 0 : undefined,
+          borderTopRightRadius: isAnalysisPanelVisible ? 0 : undefined,
+          borderBottomRightRadius: isAnalysisPanelVisible ? 0 : undefined,
         }}
         w={360}
         pos="absolute"
@@ -857,14 +879,18 @@ export const RoutePanel = ({
           <Box p={20}>{tabs}</Box>
         )}
       </Paper>
-      <Transition mounted={statsVisible} transition="fade" duration={180}>
+      <Transition
+        mounted={isAnalysisPanelVisible}
+        transition="fade"
+        duration={180}
+      >
         {(styles) =>
           routes ? (
-            <RouteStatsPanel
+            <RouteAnalysisPanel
               routes={routes}
               selectedRouteIndex={selectedRouteIndex}
               onClose={() => {
-                setStatsOpen(false);
+                setIsAnalysisPanelOpen(false);
               }}
               maxHeight="calc(100dvh - 90px)"
               style={styles}

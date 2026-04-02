@@ -59,7 +59,7 @@ export const OriginDestinationMarkers = ({
             },
           }}
         >
-          <Popup>End</Popup>
+          <Popup>Destination</Popup>
         </Marker>
       )}
     </>

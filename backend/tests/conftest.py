@@ -48,7 +48,7 @@ def dummy_route_feature_collection() -> RouteFeatureCollection:
         meta=RouteMeta(
             origin=PydanticPoint(type="Point", coordinates=origin),
             destination=PydanticPoint(type="Point", coordinates=destination),
-            route_selection_method="shortest",
+            route_optimization_method="shortest",
             route_count=1,
             recommended_route_index=0,
         ),
