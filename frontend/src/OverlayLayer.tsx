@@ -5,49 +5,51 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
-import type { OverlayAttribute, TransportMode } from "@/types/global.ts";
+import type { MapOverlayKey, TravelMode } from "@/types/global.ts";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listLayersLayersGetOptions } from "@/client/@tanstack/react-query.gen.ts";
+import { listOverlayFeaturesLayersGetOptions } from "@/client/@tanstack/react-query.gen.ts";
 import { capitalize, toGeoJsonObject } from "@/utils.ts";
 import { Text } from "@mantine/core";
 import type { Feature } from "geojson";
 import L from "leaflet";
 
-interface AttributeOverlayProps {
-  overlayAttribute: OverlayAttribute;
-  transportMode: TransportMode;
+interface OverlayLayerProps {
+  mapOverlayKey: MapOverlayKey;
+  travelMode: TravelMode;
 }
 
-const boundsToBbox = (map: L.Map) => {
+const mapBoundsToBoundingBox = (map: L.Map) => {
   const bounds = map.getBounds();
 
   return `${String(bounds.getWest())},${String(bounds.getSouth())},${String(bounds.getEast())},${String(bounds.getNorth())}`;
 };
 
-export const AttributeOverlay = ({
-  overlayAttribute,
-  transportMode,
-}: AttributeOverlayProps) => {
+export const OverlayLayer = ({
+  mapOverlayKey,
+  travelMode,
+}: OverlayLayerProps) => {
   const map = useMap();
 
-  const [bbox, setBbox] = useState<string>(() => boundsToBbox(map));
+  const [boundingBox, setBoundingBox] = useState(() =>
+    mapBoundsToBoundingBox(map),
+  );
 
   useMapEvents({
     moveend: () => {
-      setBbox(boundsToBbox(map));
+      setBoundingBox(mapBoundsToBoundingBox(map));
     },
     zoomend: () => {
-      setBbox(boundsToBbox(map));
+      setBoundingBox(mapBoundsToBoundingBox(map));
     },
   });
 
-  const layerQuery = useQuery({
-    ...listLayersLayersGetOptions({
+  const overlayQuery = useQuery({
+    ...listOverlayFeaturesLayersGetOptions({
       query: {
-        overlay_attribute: overlayAttribute,
-        transport_mode: transportMode,
-        bounding_box: bbox,
+        overlay_key: mapOverlayKey,
+        travel_mode: travelMode,
+        bounding_box: boundingBox,
         minimum_value: 0.01,
         max_features: 20000,
       },
@@ -59,14 +61,14 @@ export const AttributeOverlay = ({
   const style = useMemo(() => {
     let color = "#ffffff";
 
-    switch (overlayAttribute) {
+    switch (mapOverlayKey) {
       case "snow":
         color = "#fa4561";
         break;
       case "scenic":
         color = "#4dfa8c";
         break;
-      case "uphill":
+      case "hills":
         color = "#a652ff";
         break;
     }
@@ -82,19 +84,19 @@ export const AttributeOverlay = ({
         opacity,
       };
     };
-  }, [overlayAttribute]);
+  }, [mapOverlayKey]);
 
-  if (layerQuery.isLoading || !layerQuery.data) {
+  if (overlayQuery.isLoading || !overlayQuery.data) {
     return null;
   }
 
   return (
     <FeatureGroup>
       <Popup>
-        <Text>{capitalize(overlayAttribute)} area</Text>
-        {/*<Text>Intensity: {layerQuery.data.features[0].properties.value}/1</Text>*/}
+        <Text>{capitalize(mapOverlayKey)} area</Text>
+        {/*<Text>Intensity: {overlayQuery.data.features[0].properties.value}/1</Text>*/}
       </Popup>
-      <GeoJSON data={toGeoJsonObject(layerQuery.data)} style={style} />
+      <GeoJSON data={toGeoJsonObject(overlayQuery.data)} style={style} />
     </FeatureGroup>
   );
 };

@@ -20,12 +20,11 @@ import type {
 } from "@/client";
 import type { FeatureCollection } from "geojson";
 import { toGeoJsonObject } from "@/utils.ts";
-import { RouteBoundsController } from "@/RouteBoundsController.tsx";
-import type { PickMode } from "@/RoutePanel.tsx";
+import { RouteViewportController } from "@/RouteViewportController.tsx";
 import { MarkerPickController } from "@/MarkerPickController.tsx";
 import { basePadding, leftMargin } from "@/constants.ts";
-import { AttributeOverlay } from "@/AttributeOverlay.tsx";
-import type { TransportMode } from "@/types/global.ts";
+import { OverlayLayer } from "@/OverlayLayer.tsx";
+import type { ActiveRouteEndpoint, TravelMode } from "@/types/global.ts";
 import { Box } from "@mantine/core";
 
 interface MapProps {
@@ -37,13 +36,13 @@ interface MapProps {
   onOriginDragged: (position: Point) => Promise<boolean>;
   onDestinationDragged: (position: Point) => Promise<boolean>;
   selectedStepIndex: number | null;
-  pickMode: PickMode;
+  activeRouteEndpoint: ActiveRouteEndpoint;
   onPickOrigin: (point: Point) => Promise<boolean>;
   onPickDestination: (point: Point) => Promise<boolean>;
-  transportMode: TransportMode;
+  travelMode: TravelMode;
 }
 
-const extractOuterRingsAsHoles = (
+const extractBoundaryMaskHoles = (
   geometry: MultiPolygon,
 ): number[][][] | null => {
   const coords = geometry.coordinates;
@@ -72,20 +71,20 @@ export const Map = ({
   onOriginDragged,
   onDestinationDragged,
   selectedStepIndex,
-  pickMode,
+  activeRouteEndpoint,
   onPickOrigin,
   onPickDestination,
-  transportMode,
+  travelMode,
 }: MapProps) => {
-  const [minLong, minLat, maxLong, maxLat] = boundary.meta.bounds;
-  const initialBounds = L.latLngBounds([minLat, minLong], [maxLat, maxLong]);
+  const [minLon, minLat, maxLon, maxLat] = boundary.meta.bounds;
+  const initialBounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
 
   const selectedRoute: RouteFeature | null =
     routes && selectedRouteIndex != null
       ? (routes.features[selectedRouteIndex] ?? null)
       : null;
 
-  const visibleRoutes =
+  const displayedRoutes =
     routes && selectedRoute
       ? {
           ...routes,
@@ -98,12 +97,18 @@ export const Map = ({
       ? (selectedRoute.properties.steps[selectedStepIndex] ?? null)
       : null;
 
-  const maskGeoJson = useMemo<FeatureCollection | null>(() => {
+  const boundaryMaskGeoJson = useMemo<FeatureCollection | null>(() => {
     if (boundary.features.length === 0) {
       return null;
     }
 
     const geometry = boundary.features[0].geometry;
+
+    const holes = extractBoundaryMaskHoles(geometry);
+
+    if (!holes) {
+      return null;
+    }
 
     const worldRing = [
       [-180, -90],
@@ -112,12 +117,6 @@ export const Map = ({
       [180, -90],
       [-180, -90],
     ];
-
-    const holes = extractOuterRingsAsHoles(geometry);
-
-    if (!holes) {
-      return null;
-    }
 
     return {
       type: "FeatureCollection",
@@ -151,9 +150,9 @@ export const Map = ({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {maskGeoJson && (
+        {boundaryMaskGeoJson && (
           <GeoJSON
-            data={maskGeoJson}
+            data={boundaryMaskGeoJson}
             interactive={false}
             style={() => ({
               color: "#000",
@@ -172,12 +171,12 @@ export const Map = ({
             fillOpacity: 0,
           })}
         />
-        <RouteBoundsController
-          route={visibleRoutes}
+        <RouteViewportController
+          routes={displayedRoutes}
           selectedStepIndex={selectedStepIndex}
         />
         <MarkerPickController
-          pickMode={pickMode}
+          activeRouteEndpoint={activeRouteEndpoint}
           onPickOrigin={onPickOrigin}
           onPickDestination={onPickDestination}
         />
@@ -191,37 +190,28 @@ export const Map = ({
         {selectedRoute && (
           <SelectedSegment
             lineString={selectedRoute.geometry}
-            step={selectedStep}
+            selectedStep={selectedStep}
           />
         )}
         <LayersControl position="bottomright">
-          <LayersControl.Overlay checked name="Route">
-            <LayerGroup>
-              <RouteLayer routes={visibleRoutes} />
-            </LayerGroup>
-          </LayersControl.Overlay>
           <LayersControl.Overlay name="Snow">
             <LayerGroup>
-              <AttributeOverlay
-                overlayAttribute="snow"
-                transportMode={transportMode}
-              />
+              <OverlayLayer mapOverlayKey="snow" travelMode={travelMode} />
             </LayerGroup>
           </LayersControl.Overlay>
           <LayersControl.Overlay name="Scenic">
             <LayerGroup>
-              <AttributeOverlay
-                overlayAttribute="scenic"
-                transportMode={transportMode}
-              />
+              <OverlayLayer mapOverlayKey="scenic" travelMode={travelMode} />
             </LayerGroup>
           </LayersControl.Overlay>
-          <LayersControl.Overlay name="Uphill">
+          <LayersControl.Overlay name="Hills">
             <LayerGroup>
-              <AttributeOverlay
-                overlayAttribute="uphill"
-                transportMode={transportMode}
-              />
+              <OverlayLayer mapOverlayKey="hills" travelMode={travelMode} />
+            </LayerGroup>
+          </LayersControl.Overlay>
+          <LayersControl.Overlay checked name="Route">
+            <LayerGroup>
+              <RouteLayer routes={displayedRoutes} />
             </LayerGroup>
           </LayersControl.Overlay>
         </LayersControl>

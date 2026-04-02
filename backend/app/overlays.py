@@ -13,41 +13,42 @@ from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
 from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry import Polygon as ShapelyPolygon
 
-from app.models import OVERLAY_ATTRIBUTE_NAMES, OverlayAttribute
-from app.value_parsing import coerce_float
+from app.models import OVERLAY_KEYS, OverlayKey
+from app.value_parsing import parse_float_or_default
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from app.typing_aliases import EdgeAttributes, MultiDiGraphAny
+    from app.typing_aliases import EdgeAttributeMap, MultiDiGraphAny
 
-type PolygonIndexArray = npt.NDArray[np.int64]
+type OverlayPolygonIndexArray = npt.NDArray[np.int64]
+type MergeStrategy = Literal["max", "last"]
 
 
 @dataclass(frozen=True, slots=True)
-class OverlayApplicationContext:
+class OverlayAssignmentContext:
     """Shared context for applying one overlay attribute across graph edges."""
 
     graph: MultiDiGraphAny
     overlay_tree: STRtree
     overlay_polygons: list[ShapelyPolygon]
     polygon_value_by_id: dict[int, float]
-    overlay_attribute: OverlayAttribute
-    combination_mode: Literal["max", "last"]
+    overlay_key: OverlayKey
+    merge_strategy: MergeStrategy
 
 
-def _overlay_file_path(relative_overlay_path: str) -> Path:
+def _resolve_overlay_path(relative_overlay_path: str) -> Path:
     """Resolve an overlay path relative to the backend directory."""
     backend_directory = Path(__file__).resolve().parent.parent
 
     return backend_directory / relative_overlay_path
 
 
-def get_edge_linestring(
+def get_edge_geometry_linestring(
     graph: MultiDiGraphAny,
     source_node_id: int,
     target_node_id: int,
-    edge_attributes: EdgeAttributes,
+    edge_attributes: EdgeAttributeMap,
 ) -> ShapelyLineString:
     """Return edge geometry or fallback to a straight node-to-node segment."""
     geometry = edge_attributes.get("geometry")
@@ -58,10 +59,10 @@ def get_edge_linestring(
     start_node = graph.nodes[source_node_id]
     end_node = graph.nodes[target_node_id]
 
-    start_longitude = coerce_float(start_node.get("x"), default=0.0)
-    start_latitude = coerce_float(start_node.get("y"), default=0.0)
-    end_longitude = coerce_float(end_node.get("x"), default=0.0)
-    end_latitude = coerce_float(end_node.get("y"), default=0.0)
+    start_longitude = parse_float_or_default(start_node.get("x"), default=0.0)
+    start_latitude = parse_float_or_default(start_node.get("y"), default=0.0)
+    end_longitude = parse_float_or_default(end_node.get("x"), default=0.0)
+    end_latitude = parse_float_or_default(end_node.get("y"), default=0.0)
 
     return ShapelyLineString(
         [
@@ -71,11 +72,11 @@ def get_edge_linestring(
     )
 
 
-def load_overlay_polygons(
+def load_overlay_geometries(
     relative_overlay_path: str,
 ) -> tuple[list[ShapelyPolygon], list[float]]:
     """Load overlay polygons and corresponding values from GeoJSON."""
-    overlay_path = _overlay_file_path(relative_overlay_path)
+    overlay_path = _resolve_overlay_path(relative_overlay_path)
     read_file = cast(
         "Callable[..., gpd.GeoDataFrame]",
         gpd.read_file,
@@ -105,7 +106,7 @@ def load_overlay_polygons(
         overlay_raw_values,
         strict=True,
     ):
-        overlay_value = coerce_float(raw_value, default=0.0)
+        overlay_value = parse_float_or_default(raw_value, default=0.0)
 
         if isinstance(geometry, ShapelyPolygon):
             polygons.append(geometry)
@@ -127,16 +128,18 @@ def load_overlay_polygons(
     return polygons, values
 
 
-def _collect_covering_overlay_values(
+def _collect_midpoint_overlay_values(
     midpoint: ShapelyPoint,
-    candidate_indices: PolygonIndexArray,
+    candidate_polygon_indices: OverlayPolygonIndexArray,
     overlay_polygons: list[ShapelyPolygon],
     polygon_value_by_id: dict[int, float],
 ) -> list[float]:
     """Collect overlay values of polygons covering the midpoint."""
     overlay_values: list[float] = []
 
-    candidate_index_list = cast("list[int]", candidate_indices.astype(int).tolist())
+    candidate_index_list = cast(
+        "list[int]", candidate_polygon_indices.astype(int).tolist()
+    )
 
     for candidate_index in candidate_index_list:
         polygon = overlay_polygons[int(candidate_index)]
@@ -147,62 +150,62 @@ def _collect_covering_overlay_values(
     return overlay_values
 
 
-def _apply_overlay_to_edge(
-    context: OverlayApplicationContext,
+def _apply_overlay_key_to_edge(
+    context: OverlayAssignmentContext,
     source_node_id: int,
     target_node_id: int,
-    edge_attributes: EdgeAttributes,
+    edge_attributes: EdgeAttributeMap,
 ) -> None:
     """Apply overlay value to a single edge when midpoint intersects polygons."""
-    edge_line = get_edge_linestring(
+    edge_linestring = get_edge_geometry_linestring(
         graph=context.graph,
         source_node_id=source_node_id,
         target_node_id=target_node_id,
         edge_attributes=edge_attributes,
     )
-    midpoint = edge_line.interpolate(0.5, normalized=True)
+    edge_midpoint = edge_linestring.interpolate(0.5, normalized=True)
 
-    candidate_indices = context.overlay_tree.query(midpoint)
+    candidate_polygon_indices = context.overlay_tree.query(edge_midpoint)
 
-    if len(candidate_indices) == 0:
+    if len(candidate_polygon_indices) == 0:
         return
 
-    covering_values = _collect_covering_overlay_values(
-        midpoint=midpoint,
-        candidate_indices=candidate_indices,
+    matching_overlay_values = _collect_midpoint_overlay_values(
+        midpoint=edge_midpoint,
+        candidate_polygon_indices=candidate_polygon_indices,
         overlay_polygons=context.overlay_polygons,
         polygon_value_by_id=context.polygon_value_by_id,
     )
 
-    if not covering_values:
+    if not matching_overlay_values:
         return
 
     overlay_value = (
-        max(covering_values)
-        if context.combination_mode == "max"
-        else covering_values[-1]
+        max(matching_overlay_values)
+        if context.merge_strategy == "max"
+        else matching_overlay_values[-1]
     )
-    edge_attributes[context.overlay_attribute] = float(overlay_value)
+    edge_attributes[context.overlay_key] = float(overlay_value)
 
 
-def initialize_overlay_attributes(graph: MultiDiGraphAny) -> None:
+def initialize_edge_overlay_values(graph: MultiDiGraphAny) -> None:
     """Ensure every edge has all overlay attributes initialized to zero."""
     for source_node_id, target_node_id, edge_attributes in graph.edges(data=True):
         _ = source_node_id, target_node_id
 
-        for overlay_attribute in OVERLAY_ATTRIBUTE_NAMES:
+        for overlay_attribute in OVERLAY_KEYS:
             edge_attributes.setdefault(overlay_attribute, 0.0)
 
 
-def apply_overlay_attribute(
+def apply_overlay_key(
     graph: MultiDiGraphAny,
-    overlay_attribute: OverlayAttribute,
+    overlay_key: OverlayKey,
     overlay_polygons: list[ShapelyPolygon],
     overlay_values: list[float],
-    combination_mode: Literal["max", "last"] = "max",
+    merge_strategy: MergeStrategy = "max",
 ) -> None:
     """Apply one overlay attribute across all graph edges."""
-    context = OverlayApplicationContext(
+    context = OverlayAssignmentContext(
         graph=graph,
         overlay_tree=STRtree(overlay_polygons),
         overlay_polygons=overlay_polygons,
@@ -210,12 +213,12 @@ def apply_overlay_attribute(
             id(polygon): value
             for polygon, value in zip(overlay_polygons, overlay_values, strict=True)
         },
-        overlay_attribute=overlay_attribute,
-        combination_mode=combination_mode,
+        overlay_key=overlay_key,
+        merge_strategy=merge_strategy,
     )
 
     for source_node_id, target_node_id, edge_attributes in graph.edges(data=True):
-        _apply_overlay_to_edge(
+        _apply_overlay_key_to_edge(
             context=context,
             source_node_id=source_node_id,
             target_node_id=target_node_id,
@@ -223,18 +226,18 @@ def apply_overlay_attribute(
         )
 
 
-def apply_all_overlays(graph: MultiDiGraphAny, overlay_directory: str) -> None:
+def load_and_apply_overlays(graph: MultiDiGraphAny, overlay_directory: str) -> None:
     """Load and apply all overlay files to a graph."""
-    initialize_overlay_attributes(graph)
+    initialize_edge_overlay_values(graph)
 
-    for overlay_attribute in OVERLAY_ATTRIBUTE_NAMES:
-        polygons, values = load_overlay_polygons(
+    for overlay_attribute in OVERLAY_KEYS:
+        polygons, values = load_overlay_geometries(
             f"{overlay_directory}/{overlay_attribute}.json"
         )
-        apply_overlay_attribute(
+        apply_overlay_key(
             graph=graph,
-            overlay_attribute=overlay_attribute,
+            overlay_key=overlay_attribute,
             overlay_polygons=polygons,
             overlay_values=values,
-            combination_mode="max",
+            merge_strategy="max",
         )

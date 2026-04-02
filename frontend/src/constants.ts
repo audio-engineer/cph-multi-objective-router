@@ -3,13 +3,17 @@ export const basePadding = 30;
 /**
  * Width of the route panel.
  */
-export const panelWidth = 360;
-export const statsPanelWidth = 460;
+export const routePanelWidth = 360;
+
+/**
+ * Width of the stats panel.
+ */
+export const analysisPanelWidth = 360;
 
 /**
  * Left margin + route panel width + base padding.
  */
-export const leftMargin = 12 + panelWidth + basePadding;
+export const leftMargin = 12 + routePanelWidth + basePadding;
 
 export const routeColors = [
   "#1d4ed8",

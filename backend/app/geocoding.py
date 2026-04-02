@@ -13,15 +13,15 @@ if TYPE_CHECKING:
 type JsonObject = dict[str, object]
 
 
-def reverse_geocode_address(
+def reverse_geocode_to_address(
     longitude: float,
     latitude: float,
     *,
     zoom_level: int = 18,
 ) -> ReverseGeocodeResponse:
     """Reverse geocode coordinates to a single-line road + house number string."""
-    reverse_url = ox.settings.nominatim_url.rstrip("/") + "/reverse"
-    request_get = cast("Callable[..., requests.Response]", requests.get)
+    reverse_endpoint_url = ox.settings.nominatim_url.rstrip("/") + "/reverse"
+    send_get_request = cast("Callable[..., requests.Response]", requests.get)
 
     params: dict[str, str | int | float] = {
         "format": "jsonv2",
@@ -35,8 +35,8 @@ def reverse_geocode_address(
         "Accept-Language": ox.settings.http_accept_language,
     }
 
-    response = request_get(
-        reverse_url,
+    response = send_get_request(
+        reverse_endpoint_url,
         params=params,
         headers=headers,
         timeout=ox.settings.requests_timeout,
@@ -44,18 +44,18 @@ def reverse_geocode_address(
     )
     response.raise_for_status()
 
-    payload = cast("object", response.json())
+    response_data = cast("object", response.json())
 
-    if not isinstance(payload, dict):
+    if not isinstance(response_data, dict):
         return ReverseGeocodeResponse(address="")
 
-    payload_object = cast("JsonObject", payload)
-    raw_address = payload_object.get("address")
+    payload_object = cast("JsonObject", response_data)
+    address_payload = payload_object.get("address")
 
-    if not isinstance(raw_address, dict):
+    if not isinstance(address_payload, dict):
         return ReverseGeocodeResponse(address="")
 
-    address_object = cast("JsonObject", raw_address)
+    address_object = cast("JsonObject", address_payload)
     road = str(address_object.get("road") or "").strip()
     house_number = str(address_object.get("house_number") or "").strip()
     formatted_address = " ".join(part for part in (road, house_number) if part)

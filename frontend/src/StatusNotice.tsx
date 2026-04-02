@@ -1,11 +1,11 @@
 import { Affix, type MantineColor, Paper, Text } from "@mantine/core";
 
-interface StatusBarProps {
+interface StatusNoticeProps {
   message: string;
   color: MantineColor;
 }
 
-export const StatusBar = ({ message, color }: StatusBarProps) => {
+export const StatusNotice = ({ message, color }: StatusNoticeProps) => {
   return (
     <Affix position={{ bottom: 12, left: 12 }} zIndex={1200}>
       <Paper

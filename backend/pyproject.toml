@@ -1,6 +1,6 @@
 [project]
 name = "cph-multi-objective-router"
-version = "0.5.0"
+version = "0.6.0"
 description = "Multi-objective urban router and navigation app"
 readme = "README.md"
 authors = [

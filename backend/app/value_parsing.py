@@ -3,7 +3,7 @@
 from typing import cast
 
 
-def coerce_float(value: object, *, default: float = 0.0) -> float:
+def parse_float_or_default(value: object, *, default: float = 0.0) -> float:
     """Coerce values to float with a safe default."""
     try:
         numeric_value = cast("str | int | float", value)

@@ -2,69 +2,20 @@
 GET http://localhost:8000/boundaries/current
 
 ### Get snow map overlay
-GET http://localhost:8000/layers?overlay_attribute=snow&transport_mode=walk
+GET http://localhost:8000/layers?overlay_key=snow&travel_mode=walking
 
 ### Get route by origin and destination address
-POST http://localhost:8000/routes/by-address
-Content-Type: application/json
-
-{
-  "transport_mode": "bike",
-  "origin": "Nørrebro",
-  "destination": "Bispebjerg",
-  "route_options": {
-    "route_selection_method": "weighted",
-    "objective_weights": {
-      "scenic": 40,
-      "avoid_snow": 80,
-      "avoid_uphill": 20
-    }
-  }
-}
+GET http://localhost:8000/routes/by-address?travel_mode=cycling&origin=Nørrebro&destination=Bispebjerg&
+    route_optimization_method=weighted&scenic_weight=40&snow_free_weight=80&flat_weight=20
 
 ### Get route by origin and destination coordinates
-POST http://localhost:8000/routes/by-coordinates
-Content-Type: application/json
-
-{
-  "transport_mode": "walk",
-  "origin": {
-    "type": "Point",
-    "coordinates": [
-      12.538235,
-      55.700772
-    ]
-  },
-  "destination": {
-    "type": "Point",
-    "coordinates": [
-      12.513641,
-      55.663993
-    ]
-  },
-  "route_options": {
-    "route_selection_method": "shortest"
-  }
-}
+GET http://localhost:8000/routes/by-coordinates?travel_mode=walking&origin_longitude=12.538235&
+    origin_latitude=55.700772&destination_longitude=12.513641&destination_latitude=55.663993&
+    route_optimization_method=shortest
 
 ### Get pareto routes by origin and destination address
-POST http://localhost:8000/routes/by-address
-Content-Type: application/json
-
-{
-  "transport_mode": "bike",
-  "origin": "Uglevej 23",
-  "destination": "Fiolstræde 38",
-  "route_options": {
-    "route_selection_method": "pareto",
-    "objective_weights": {
-      "scenic": 0,
-      "avoid_snow": 0,
-      "avoid_uphill": 0
-    }
-  }
-}
-
+GET http://localhost:8000/routes/by-address?travel_mode=cycling&origin=Uglevej%2023&destination=Fiolstræde%2038&
+    route_optimization_method=pareto&scenic_weight=0&snow_free_weight=0&flat_weight=0
 
 ### Reverse geocode coordinates to approximate address
 GET http://localhost:8000/geocoding/reverse?longitude=12.538235&latitude=55.700772

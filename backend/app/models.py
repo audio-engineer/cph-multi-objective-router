@@ -8,34 +8,34 @@ from geojson_pydantic import MultiPolygon as PydanticMultiPolygon  # noqa: TC002
 from geojson_pydantic import Point as PydanticPoint  # noqa: TC002
 from pydantic import BaseModel, ConfigDict, Field
 
-TransportMode = Literal["bike", "walk"]
-OverlayAttribute = Literal["snow", "scenic", "uphill"]
-RouteSelectionMethod = Literal["shortest", "weighted", "pareto"]
+TravelMode = Literal["walking", "cycling"]
+OverlayKey = Literal["snow", "scenic", "hills"]
+RouteOptimizationMethod = Literal["shortest", "weighted", "pareto"]
 
-OVERLAY_ATTRIBUTE_NAMES: tuple[OverlayAttribute, ...] = ("snow", "scenic", "uphill")
+OVERLAY_KEYS: tuple[OverlayKey, ...] = ("snow", "scenic", "hills")
 
 
-class RouteObjectiveWeights(BaseModel):
+class RoutePreferenceWeights(BaseModel):
     """User-defined weights for route optimization objectives."""
 
-    scenic: int = Field(default=0, ge=0, le=100)
-    avoid_snow: int = Field(default=0, ge=0, le=100)
-    avoid_uphill: int = Field(default=0, ge=0, le=100)
+    scenic_weight: int = Field(default=0, ge=0, le=100)
+    snow_free_weight: int = Field(default=0, ge=0, le=100)
+    flat_weight: int = Field(default=0, ge=0, le=100)
 
 
-def build_default_route_objective_weights() -> RouteObjectiveWeights:
+def build_default_route_preference_weights() -> RoutePreferenceWeights:
     """Build default objective weights for request options."""
-    return RouteObjectiveWeights()
+    return RoutePreferenceWeights()
 
 
-class RouteComputationOptions(BaseModel):
+class RoutePlanningOptions(BaseModel):
     """Options controlling how routes are computed."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
-    route_selection_method: RouteSelectionMethod = Field(default="shortest")
-    objective_weights: RouteObjectiveWeights = Field(
-        default_factory=build_default_route_objective_weights,
+    route_optimization_method: RouteOptimizationMethod = Field(default="shortest")
+    preference_weights: RoutePreferenceWeights = Field(
+        default_factory=build_default_route_preference_weights,
     )
 
     pareto_max_routes: int = Field(default=8, ge=1, le=25)
@@ -43,20 +43,20 @@ class RouteComputationOptions(BaseModel):
     pareto_max_total_labels: int = Field(default=50_000, ge=1_000, le=500_000)
 
 
-def build_default_route_options() -> RouteComputationOptions:
+def build_default_route_options() -> RoutePlanningOptions:
     """Build default routing options for route requests."""
-    return RouteComputationOptions()
+    return RoutePlanningOptions()
 
 
-class CoordinateRouteRequest(BaseModel):
+class CoordinatesRouteRequest(BaseModel):
     """Route request where origin and destination are coordinates."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
-    transport_mode: TransportMode
+    travel_mode: TravelMode
     origin: PydanticPoint
     destination: PydanticPoint
-    route_options: RouteComputationOptions = Field(
+    route_options: RoutePlanningOptions = Field(
         default_factory=build_default_route_options
     )
 
@@ -66,25 +66,25 @@ class AddressRouteRequest(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(populate_by_name=True)
 
-    transport_mode: TransportMode
+    travel_mode: TravelMode
     origin: str
     destination: str
-    route_options: RouteComputationOptions = Field(
+    route_options: RoutePlanningOptions = Field(
         default_factory=build_default_route_options
     )
 
 
-class RouteStepResponse(BaseModel):
+class RouteStepSummary(BaseModel):
     """A high-level navigation step on the route."""
 
     street: str
     distance: float
     segment_index_from: int
     segment_index_to: int
-    objective_costs: RouteObjectiveCostBreakdown
+    penalty_breakdown: RoutePenaltyBreakdown
 
 
-class RouteObjectiveCostBreakdown(BaseModel):
+class RoutePenaltyBreakdown(BaseModel):
     """Objective-aligned route cost totals."""
 
     distance: float
@@ -98,8 +98,8 @@ class RouteProperties(BaseModel):
 
     route_index: int = Field(description="Zero-based route index within the response")
     distance: float = Field(description="Route distance in metres")
-    steps: list[RouteStepResponse]
-    objective_costs: RouteObjectiveCostBreakdown | None = None
+    steps: list[RouteStepSummary]
+    penalty_breakdown: RoutePenaltyBreakdown | None = None
     pareto_rank: int | None = None
     selection_score: float | None = None
 
@@ -117,7 +117,7 @@ class RouteMeta(BaseModel):
 
     origin: PydanticPoint
     destination: PydanticPoint
-    route_selection_method: RouteSelectionMethod
+    route_optimization_method: RouteOptimizationMethod
     route_count: int
     recommended_route_index: int
 
@@ -158,26 +158,26 @@ class BoundaryFeatureCollection(BaseModel):
     meta: BoundaryMeta
 
 
-class LayerProperties(BaseModel):
+class OverlayFeatureProperties(BaseModel):
     """Properties attached to a layer feature."""
 
-    overlay_attribute: OverlayAttribute
+    overlay_key: OverlayKey
     value: float
 
 
-class LayerFeature(BaseModel):
+class OverlayFeature(BaseModel):
     """Layer feature geometry and properties."""
 
     type: Literal["Feature"]
     geometry: PydanticLineString
-    properties: LayerProperties
+    properties: OverlayFeatureProperties
 
 
-class LayerFeatureCollection(BaseModel):
+class OverlayFeatureCollection(BaseModel):
     """Layer FeatureCollection."""
 
     type: Literal["FeatureCollection"]
-    features: list[LayerFeature]
+    features: list[OverlayFeature]
 
 
 class ReverseGeocodeResponse(BaseModel):
@@ -187,7 +187,7 @@ class ReverseGeocodeResponse(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
-class RouteStep:
+class AggregatedRouteStep:
     """A grouped step along contiguous segments with the same street."""
 
     street: str
@@ -200,12 +200,12 @@ class RouteStep:
 
 
 @dataclass(frozen=True, slots=True)
-class NormalizedRouteObjectiveWeights:
+class NormalizedRoutePreferenceWeights:
     """Objective weights scaled to [0.0, 1.0]."""
 
-    scenic: float
-    avoid_snow: float
-    avoid_uphill: float
+    scenic_weight: float
+    snow_free_weight: float
+    flat_weight: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,14 +218,14 @@ class RouteCoordinates:
     destination_latitude: float
 
 
-type RouteCostVector = tuple[float, float, float, float]
+type ParetoCostVector = tuple[float, float, float, float]
 
 
 @dataclass(slots=True)
-class ParetoPathLabel:
+class ParetoSearchLabel:
     """A label in the Martins multi-objective shortest-path search."""
 
     node_id: int
-    cost_vector: RouteCostVector
+    cost_vector: ParetoCostVector
     previous_label_id: int | None
     previous_edge_key: tuple[int, int, int] | None

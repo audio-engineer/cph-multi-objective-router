@@ -15,8 +15,8 @@ export const RouteLayer = ({ routes }: RouteLayerProps) => {
   return routes.features.map((route) => (
     <Polyline
       key={route.properties.route_index}
-      positions={route.geometry.coordinates.map((position) =>
-        L.latLng(position[1], position[0]),
+      positions={route.geometry.coordinates.map((coordinate) =>
+        L.latLng(coordinate[1], coordinate[0]),
       )}
       pathOptions={{
         color: getRouteColor(route.properties.route_index),

@@ -1,58 +1,65 @@
 import { Polyline, useMap } from "react-leaflet";
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import type { LineString, RouteStepResponse } from "@/client";
-import { fitBoundsRightOfPanel } from "@/utils.ts";
+import type { LineString, RouteStepSummary } from "@/client";
+import { fitBoundsBesidePanel } from "@/utils.ts";
 
 interface SelectedSegmentProps {
   lineString: LineString;
-  step: RouteStepResponse | null;
+  selectedStep: RouteStepSummary | null;
 }
 
-export const SelectedSegment = ({ lineString, step }: SelectedSegmentProps) => {
+export const SelectedSegment = ({
+  lineString,
+  selectedStep,
+}: SelectedSegmentProps) => {
   const map = useMap();
 
-  const positions = useMemo(() => {
-    if (!step) {
+  const segmentCoordinates = useMemo(() => {
+    if (!selectedStep) {
       return null;
     }
 
-    const from = Math.max(0, step.segment_index_from);
-    const to = Math.min(
+    const startIndex = Math.max(0, selectedStep.segment_index_from);
+    const endIndex = Math.min(
       lineString.coordinates.length - 1,
-      step.segment_index_to,
+      selectedStep.segment_index_to,
     );
 
-    if (to <= from) {
+    if (endIndex <= startIndex) {
       return null;
     }
 
-    return lineString.coordinates.slice(from, to + 1);
-  }, [lineString, step]);
+    return lineString.coordinates.slice(startIndex, endIndex + 1);
+  }, [lineString, selectedStep]);
 
   useEffect(() => {
-    if (!positions || positions.length === 0) {
+    if (!segmentCoordinates || segmentCoordinates.length === 0) {
       return;
     }
 
     const bounds = L.latLngBounds(
-      positions.map((pos) => L.latLng(pos[1], pos[0])),
+      segmentCoordinates.map((coordinate) =>
+        L.latLng(coordinate[1], coordinate[0]),
+      ),
     );
 
     if (bounds.isValid()) {
       // map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
 
-      fitBoundsRightOfPanel(map, bounds);
+      fitBoundsBesidePanel(map, bounds);
     }
-  }, [positions, map]);
+  }, [segmentCoordinates, map]);
 
-  if (!positions) {
+  if (!segmentCoordinates) {
     return null;
   }
 
   return (
     <Polyline
-      positions={positions.map((pos) => L.latLng(pos[1], pos[0]))}
+      positions={segmentCoordinates.map((coordinate) =>
+        L.latLng(coordinate[1], coordinate[0]),
+      )}
       pathOptions={{
         weight: 6,
         opacity: 0.8,
