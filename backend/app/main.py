@@ -13,9 +13,11 @@ from shapely.geometry import mapping
 from starlette.middleware.cors import CORSMiddleware
 
 from app.geocoding import reverse_geocode_to_address
+from app.graph_layer_service import build_graph_layer_feature_collection
 from app.graph_state import (
     GRAPH_STATE,
     get_edge_geodataframe_for_travel_mode,
+    get_node_geodataframe_for_travel_mode,
     load_graph_state,
 )
 from app.layer_service import build_overlay_feature_collection
@@ -26,6 +28,8 @@ from app.models import (
     BoundaryMeta,
     BoundaryProperties,
     CoordinatesRouteRequest,
+    GraphLayerFeatureCollection,
+    GraphLayerKey,
     OverlayFeatureCollection,
     OverlayKey,
     ReverseGeocodeResponse,
@@ -266,6 +270,31 @@ def list_overlay_features(
         overlay_key=overlay_key,
         bounding_box=bounding_box,
         minimum_overlay_value=minimum_value,
+        max_features=max_features,
+    )
+
+
+@app.get("/graph-layers", response_model=GraphLayerFeatureCollection)
+def list_graph_layer_features(
+    graph_layer_key: GraphLayerKey,
+    bounding_box: str | None = None,
+    max_features: int = 20_000,
+) -> GraphLayerFeatureCollection:
+    """Get raw OSMnx graph node or edge features for a selected network."""
+    is_cycling_layer = graph_layer_key.startswith("cycling_")
+    is_node_layer = graph_layer_key.endswith("_nodes")
+    travel_mode: TravelMode = "cycling" if is_cycling_layer else "walking"
+
+    geodataframe = (
+        get_node_geodataframe_for_travel_mode(GRAPH_STATE, travel_mode)
+        if is_node_layer
+        else get_edge_geodataframe_for_travel_mode(GRAPH_STATE, travel_mode)
+    )
+
+    return build_graph_layer_feature_collection(
+        geodataframe,
+        graph_layer_key=graph_layer_key,
+        bounding_box=bounding_box,
         max_features=max_features,
     )
 

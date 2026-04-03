@@ -8,11 +8,23 @@ from geojson_pydantic import MultiPolygon as PydanticMultiPolygon  # noqa: TC002
 from geojson_pydantic import Point as PydanticPoint  # noqa: TC002
 from pydantic import BaseModel, ConfigDict, Field
 
-TravelMode = Literal["walking", "cycling"]
-OverlayKey = Literal["snow", "scenic", "hills"]
-RouteOptimizationMethod = Literal["shortest", "weighted", "pareto"]
+type TravelMode = Literal["walking", "cycling"]
+type OverlayKey = Literal["snow", "scenic", "hills"]
+type GraphLayerKey = Literal[
+    "cycling_nodes",
+    "cycling_edges",
+    "walking_nodes",
+    "walking_edges",
+]
+type RouteOptimizationMethod = Literal["shortest", "weighted", "pareto"]
 
 OVERLAY_KEYS: tuple[OverlayKey, ...] = ("snow", "scenic", "hills")
+GRAPH_LAYER_KEYS: tuple[GraphLayerKey, ...] = (
+    "cycling_nodes",
+    "cycling_edges",
+    "walking_nodes",
+    "walking_edges",
+)
 
 
 class RoutePreferenceWeights(BaseModel):
@@ -178,6 +190,35 @@ class OverlayFeatureCollection(BaseModel):
 
     type: Literal["FeatureCollection"]
     features: list[OverlayFeature]
+
+
+class GraphLayerFeatureProperties(BaseModel):
+    """Properties attached to a graph layer feature."""
+
+    graph_layer_key: GraphLayerKey
+
+
+class GraphNodeFeature(BaseModel):
+    """Graph node feature geometry and properties."""
+
+    type: Literal["Feature"]
+    geometry: PydanticPoint
+    properties: GraphLayerFeatureProperties
+
+
+class GraphEdgeFeature(BaseModel):
+    """Graph edge feature geometry and properties."""
+
+    type: Literal["Feature"]
+    geometry: PydanticLineString
+    properties: GraphLayerFeatureProperties
+
+
+class GraphLayerFeatureCollection(BaseModel):
+    """Graph layer FeatureCollection."""
+
+    type: Literal["FeatureCollection"]
+    features: list[GraphNodeFeature | GraphEdgeFeature]
 
 
 class ReverseGeocodeResponse(BaseModel):

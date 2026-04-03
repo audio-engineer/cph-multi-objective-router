@@ -16,10 +16,12 @@ from app.main import (
     compute_route_by_address,
     compute_route_by_coordinates,
     get_current_boundary,
+    list_graph_layer_features,
     list_overlay_features,
     reverse_geocode,
 )
 from app.models import (
+    GraphLayerFeatureCollection,
     OverlayFeatureCollection,
     ReverseGeocodeResponse,
     RouteCoordinates,
@@ -143,6 +145,10 @@ def test_list_layers_and_boundary_endpoints(
         {"geometry": []}, geometry="geometry", crs="EPSG:4326"
     )
     empty_collection = OverlayFeatureCollection(type="FeatureCollection", features=[])
+    empty_graph_collection = GraphLayerFeatureCollection(
+        type="FeatureCollection",
+        features=[],
+    )
 
     def fake_get_edges_for_mode(
         _state: object,
@@ -156,6 +162,12 @@ def test_list_layers_and_boundary_endpoints(
     ) -> OverlayFeatureCollection:
         return empty_collection
 
+    def fake_build_graph_layer_feature_collection(
+        *_args: object,
+        **_kwargs: object,
+    ) -> GraphLayerFeatureCollection:
+        return empty_graph_collection
+
     monkeypatch.setattr(
         "app.main.get_edge_geodataframe_for_travel_mode",
         fake_get_edges_for_mode,
@@ -164,10 +176,20 @@ def test_list_layers_and_boundary_endpoints(
         "app.main.build_overlay_feature_collection",
         fake_build_layer_feature_collection,
     )
+    monkeypatch.setattr(
+        "app.main.get_node_geodataframe_for_travel_mode",
+        fake_get_edges_for_mode,
+    )
+    monkeypatch.setattr(
+        "app.main.build_graph_layer_feature_collection",
+        fake_build_graph_layer_feature_collection,
+    )
 
     layers = list_overlay_features("snow", "cycling")
+    graph_layers = list_graph_layer_features("cycling_nodes")
 
     assert layers is empty_collection
+    assert graph_layers is empty_graph_collection
 
     GRAPH_STATE.boundary_geometry = MultiPolygon(
         [Polygon([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])]
