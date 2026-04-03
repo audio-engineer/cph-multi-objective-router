@@ -5,19 +5,35 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
-import type { MapOverlayKey, TravelMode } from "@/types/global.ts";
-import { useMemo, useState } from "react";
+import type {
+  GraphLayerKey,
+  MapOverlayKey,
+  TravelMode,
+} from "@/types/global.ts";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listOverlayFeaturesLayersGetOptions } from "@/client/@tanstack/react-query.gen.ts";
+import {
+  listGraphLayerFeaturesGraphLayersGetOptions,
+  listOverlayFeaturesLayersGetOptions,
+} from "@/client/@tanstack/react-query.gen.ts";
 import { capitalize, toGeoJsonObject } from "@/utils.ts";
 import { Text } from "@mantine/core";
 import type { Feature } from "geojson";
 import L from "leaflet";
 
-interface OverlayLayerProps {
+interface ThematicOverlayLayerProps {
   mapOverlayKey: MapOverlayKey;
   travelMode: TravelMode;
+  graphLayerKey?: never;
 }
+
+interface GraphOverlayLayerProps {
+  graphLayerKey: GraphLayerKey;
+  travelMode?: never;
+  mapOverlayKey?: never;
+}
+
+type OverlayLayerProps = ThematicOverlayLayerProps | GraphOverlayLayerProps;
 
 const mapBoundsToBoundingBox = (map: L.Map) => {
   const bounds = map.getBounds();
@@ -28,8 +44,15 @@ const mapBoundsToBoundingBox = (map: L.Map) => {
 export const OverlayLayer = ({
   mapOverlayKey,
   travelMode,
+  graphLayerKey,
 }: OverlayLayerProps) => {
   const map = useMap();
+  const isGraphLayer = graphLayerKey !== undefined;
+  const isNodeLayer = isGraphLayer && graphLayerKey.endsWith("_nodes");
+  const pointColor =
+    isGraphLayer && graphLayerKey.startsWith("cycling_")
+      ? "#2f9e44"
+      : "#1c7ed6";
 
   const [boundingBox, setBoundingBox] = useState(() =>
     mapBoundsToBoundingBox(map),
@@ -44,21 +67,47 @@ export const OverlayLayer = ({
     },
   });
 
-  const overlayQuery = useQuery({
+  const graphLayerQuery = useQuery({
+    ...listGraphLayerFeaturesGraphLayersGetOptions({
+      query: {
+        graph_layer_key: graphLayerKey ?? "cycling_edges",
+        bounding_box: boundingBox,
+        max_features: 108000,
+      },
+    }),
+    enabled: isGraphLayer,
+    placeholderData: (layerFeatureCollection) => layerFeatureCollection,
+    staleTime: 0,
+  });
+
+  const thematicOverlayQuery = useQuery({
     ...listOverlayFeaturesLayersGetOptions({
       query: {
-        overlay_key: mapOverlayKey,
-        travel_mode: travelMode,
+        overlay_key: mapOverlayKey ?? "snow",
+        travel_mode: travelMode ?? "walking",
         bounding_box: boundingBox,
         minimum_value: 0.01,
         max_features: 20000,
       },
     }),
+    enabled: !isGraphLayer,
     placeholderData: (layerFeatureCollection) => layerFeatureCollection,
     staleTime: 0,
   });
 
-  const style = useMemo(() => {
+  const overlayData = isGraphLayer
+    ? graphLayerQuery.data
+    : thematicOverlayQuery.data;
+
+  const style = (feature?: Feature) => {
+    if (isGraphLayer) {
+      return {
+        color: pointColor,
+        weight: isNodeLayer ? 1 : 2,
+        opacity: 0.8,
+      };
+    }
+
     let color = "#ffffff";
 
     switch (mapOverlayKey) {
@@ -73,30 +122,42 @@ export const OverlayLayer = ({
         break;
     }
 
-    return (feature?: Feature) => {
-      const value = Number(feature?.properties?.value ?? 0);
+    const value = Number(feature?.properties?.value ?? 0);
+    const opacity = Math.max(0.1, Math.min(1, value));
 
-      const opacity = Math.max(0.1, Math.min(1, value));
-
-      return {
-        color,
-        weight: 4,
-        opacity,
-      };
+    return {
+      color,
+      weight: 4,
+      opacity,
     };
-  }, [mapOverlayKey]);
+  };
 
-  if (overlayQuery.isLoading || !overlayQuery.data) {
+  if (overlayData === undefined) {
     return null;
   }
 
   return (
     <FeatureGroup>
       <Popup>
-        <Text>{capitalize(mapOverlayKey)} area</Text>
+        <Text>{capitalize(mapOverlayKey ?? graphLayerKey)} area</Text>
         {/*<Text>Intensity: {overlayQuery.data.features[0].properties.value}/1</Text>*/}
       </Popup>
-      <GeoJSON data={toGeoJsonObject(overlayQuery.data)} style={style} />
+      <GeoJSON
+        data={toGeoJsonObject(overlayData)}
+        style={style}
+        pointToLayer={
+          isNodeLayer
+            ? (_feature, latlng) =>
+                L.circleMarker(latlng, {
+                  radius: 3,
+                  color: pointColor,
+                  weight: 1,
+                  fillColor: pointColor,
+                  fillOpacity: 0.75,
+                })
+            : undefined
+        }
+      />
     </FeatureGroup>
   );
 };

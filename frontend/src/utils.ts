@@ -2,6 +2,7 @@ import type { GeoJsonObject, Feature, Polygon, MultiPolygon } from "geojson";
 import type {
   BoundaryFeature,
   BoundaryFeatureCollection,
+  GraphLayerFeatureCollection,
   OverlayFeatureCollection,
   RouteFeatureCollection,
 } from "@/client";
@@ -12,7 +13,8 @@ export const toGeoJsonObject = (
   featureCollection:
     | RouteFeatureCollection
     | BoundaryFeatureCollection
-    | OverlayFeatureCollection,
+    | OverlayFeatureCollection
+    | GraphLayerFeatureCollection,
 ): GeoJsonObject => {
   const copy = { ...featureCollection };
 

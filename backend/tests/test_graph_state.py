@@ -10,14 +10,15 @@ from app.graph_state import (
     LoadedGraphState,
     get_edge_geodataframe_for_travel_mode,
     get_graph_for_travel_mode,
+    get_node_geodataframe_for_travel_mode,
     load_boundary_geometry,
     load_graph_state,
     validate_coordinate_within_boundary,
 )
 
 
-def test_get_graph_and_edges_for_mode() -> None:
-    """Graph and edge accessors should return values when state is populated."""
+def test_get_graph_nodes_and_edges_for_mode() -> None:
+    """Graph, node, and edge accessors should return values when state is populated."""
     graph: nx.MultiDiGraph[int] = nx.MultiDiGraph()
     geodataframe = gpd.GeoDataFrame(
         {"geometry": []}, geometry="geometry", crs="EPSG:4326"
@@ -25,11 +26,14 @@ def test_get_graph_and_edges_for_mode() -> None:
     state = LoadedGraphState(
         cycling_graph=graph,
         walking_graph=graph,
+        cycling_nodes=geodataframe,
+        walking_nodes=geodataframe,
         cycling_edges=geodataframe,
         walking_edges=geodataframe,
     )
 
     assert get_graph_for_travel_mode(state, "cycling") is graph
+    assert get_node_geodataframe_for_travel_mode(state, "cycling").equals(geodataframe)
     assert get_edge_geodataframe_for_travel_mode(state, "walking").equals(geodataframe)
 
 
@@ -93,6 +97,11 @@ def test_load_graph_state(monkeypatch: pytest.MonkeyPatch) -> None:
     ) -> gpd.GeoDataFrame:
         return geodataframe
 
+    def fake_build_node_geodataframe(
+        _graph: nx.MultiDiGraph[int],
+    ) -> gpd.GeoDataFrame:
+        return geodataframe
+
     def fake_load_boundary_polygon(_place: str) -> MultiPolygon:
         return boundary
 
@@ -103,6 +112,10 @@ def test_load_graph_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.graph_state._build_edge_geodataframe",
         fake_build_edge_geodataframe,
+    )
+    monkeypatch.setattr(
+        "app.graph_state._build_node_geodataframe",
+        fake_build_node_geodataframe,
     )
     monkeypatch.setattr(
         "app.graph_state.load_boundary_geometry",
@@ -118,6 +131,8 @@ def test_load_graph_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert state.cycling_graph is bike_graph
     assert state.walking_graph is walk_graph
+    assert state.cycling_nodes is geodataframe
+    assert state.walking_nodes is geodataframe
     assert state.cycling_edges is geodataframe
     assert state.walking_edges is geodataframe
     assert state.boundary_geometry is boundary

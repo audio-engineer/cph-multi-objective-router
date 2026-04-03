@@ -194,6 +194,26 @@ export const Map = ({
           />
         )}
         <LayersControl position="bottomright">
+          <LayersControl.Overlay name="Cycling Edges">
+            <LayerGroup>
+              <OverlayLayer graphLayerKey="cycling_edges" />
+            </LayerGroup>
+          </LayersControl.Overlay>
+          <LayersControl.Overlay name="Cycling Nodes">
+            <LayerGroup>
+              <OverlayLayer graphLayerKey="cycling_nodes" />
+            </LayerGroup>
+          </LayersControl.Overlay>
+          <LayersControl.Overlay name="Walking Edges">
+            <LayerGroup>
+              <OverlayLayer graphLayerKey="walking_edges" />
+            </LayerGroup>
+          </LayersControl.Overlay>
+          <LayersControl.Overlay name="Walking Nodes">
+            <LayerGroup>
+              <OverlayLayer graphLayerKey="walking_nodes" />
+            </LayerGroup>
+          </LayersControl.Overlay>
           <LayersControl.Overlay name="Snow">
             <LayerGroup>
               <OverlayLayer mapOverlayKey="snow" travelMode={travelMode} />
