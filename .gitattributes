@@ -1,0 +1,6 @@
+* text=auto
+
+.DS_Store export-ignore
+uv.lock export-ignore
+.idea export-ignore
+pnpm-lock.yaml export-ignore
