@@ -23,7 +23,7 @@ export const toGeoJsonObject = (
   //   delete copy.bbox;
   // }
 
-  return copy as GeoJsonObject;
+  return copy;
 };
 
 export const toTurfFeature = (
