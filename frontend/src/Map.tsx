@@ -52,7 +52,7 @@ const extractBoundaryMaskHoles = (
 
     for (const poly of coords) {
       if (Array.isArray(poly) && Array.isArray(poly[0])) {
-        holes.push(poly[0] as number[][]);
+        holes.push(poly[0]);
       }
     }
 

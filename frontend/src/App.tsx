@@ -554,7 +554,7 @@ const App = () => {
     sliderSearchTimeoutRef.current = setTimeout(() => {
       sliderSearchTimeoutRef.current = null;
       void executeSearch(rebuildRouteSearchRequest(committedSearch, overrides));
-    }, sliderSearchDelayMs) as unknown as number;
+    }, sliderSearchDelayMs);
   };
 
   const handleTravelModeChange = (nextTravelMode: TravelMode) => {
@@ -709,7 +709,7 @@ const App = () => {
         setStatusColor("green");
 
         statusTimeoutRef.current = null;
-      }, ttlMs) as unknown as number;
+      }, ttlMs);
     }
   };
 

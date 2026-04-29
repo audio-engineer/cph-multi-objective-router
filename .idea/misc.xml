@@ -3,11 +3,4 @@
   <component name="Black">
     <option name="sdkName" value="uv (backend)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="uv (backend)" project-jdk-type="Python SDK" />
-  <component name="PyrightConfiguration">
-    <option name="enabled" value="true" />
-  </component>
-  <component name="RuffConfiguration">
-    <option name="enabled" value="true" />
-  </component>
 </project>

@@ -591,7 +591,7 @@ export const RoutePanel = ({
         <SegmentedControl
           value={travelMode}
           onChange={(value) => {
-            onTravelModeChange(value as TravelMode);
+            onTravelModeChange(value);
           }}
           fullWidth
           data={[
@@ -616,7 +616,7 @@ export const RoutePanel = ({
         <SegmentedControl
           value={routePlanningMode}
           onChange={(value) => {
-            onRoutePlanningModeChange(value as RoutePlanningMode);
+            onRoutePlanningModeChange(value);
           }}
           fullWidth
           data={[
@@ -630,9 +630,7 @@ export const RoutePanel = ({
             <SegmentedControl
               value={routeOptimizationMethod}
               onChange={(value) => {
-                onRouteOptimizationMethodChange(
-                  value as RouteOptimizationMethod,
-                );
+                onRouteOptimizationMethodChange(value);
               }}
               fullWidth
               mt="md"
