@@ -12,7 +12,6 @@ from fastapi import HTTPException
 from geojson_pydantic import LineString as PydanticLineString
 from geojson_pydantic import Point as PydanticPoint
 from geojson_pydantic.types import Position2D, Position3D
-from networkx.exception import NetworkXNoPath
 
 from app.costs import (
     FALLBACK_EDGE_COST,
@@ -52,6 +51,10 @@ type EdgeSelector = Callable[[int, int], EdgeAttributeMap | None]
 type ShortestPathFunction = Callable[..., list[int]]
 type PathWeightFunction = Callable[..., float | int]
 type NearestNodeFunction = Callable[..., int]
+
+
+class ParetoSearchLimitExceededError(RuntimeError):
+    """Raised when bounded Pareto search exhausts its label budget."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -580,7 +583,12 @@ def _build_pareto_route_candidates(
     )
 
     if not destination_label_ids:
-        raise NetworkXNoPath
+        error_message = (
+            "Bounded Pareto search did not find a destination label before reaching "
+            "the configured label limit."
+        )
+
+        raise ParetoSearchLimitExceededError(error_message)
 
     ranked_label_ids = sorted(
         destination_label_ids,
@@ -826,8 +834,10 @@ def build_route_feature_collection(
             destination_node_id,
             route_options,
         )
-    except NetworkXNoPath:
-        raise HTTPException(status_code=500, detail="No path found.") from None
+    except ParetoSearchLimitExceededError as exception:
+        raise HTTPException(
+            status_code=500, detail=f"Path calculation failed: {exception}"
+        ) from None
     except Exception as exception:  # pragma: no cover - library failure path
         raise HTTPException(
             status_code=500,
