@@ -65,10 +65,10 @@ export-schema:
 generate-client: $(OPENAPI_JSON)
 	cd $(FRONTEND_DIR) && pnpm generate-client
 
-openapi: export-schema generate-client
-
 $(OPENAPI_JSON): $(BACKEND_DIR)/app/main.py $(BACKEND_DIR)/export_openapi.py
 	cd $(BACKEND_DIR) && uv run python export_openapi.py
+
+openapi: export-schema generate-client
 
 install-backend:
 	cd $(BACKEND_DIR) && uv sync
