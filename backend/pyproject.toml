@@ -51,7 +51,7 @@ convention = "google"
 
 [tool.basedpyright]
 typeCheckingMode = "all"
-include = ["app", "tests", "export_openapi.py"]
+include = ["app", "tests", "scripts"]
 exclude = ["notebooks"]
 venvPath = "."
 venv = ".venv"
