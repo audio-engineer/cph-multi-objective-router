@@ -60,13 +60,13 @@ frontend:
 	cd $(FRONTEND_DIR) && pnpm dev
 
 export-schema:
-	cd $(BACKEND_DIR) && uv run python export_openapi.py
+	cd $(BACKEND_DIR) && uv run python -m scripts.export_openapi
 
 generate-client: $(OPENAPI_JSON)
 	cd $(FRONTEND_DIR) && pnpm generate-client
 
-$(OPENAPI_JSON): $(BACKEND_DIR)/app/main.py $(BACKEND_DIR)/export_openapi.py
-	cd $(BACKEND_DIR) && uv run python export_openapi.py
+$(OPENAPI_JSON): $(BACKEND_DIR)/app/main.py $(BACKEND_DIR)/scripts/export_openapi.py
+	cd $(BACKEND_DIR) && uv run python -m scripts.export_openapi
 
 openapi: export-schema generate-client
 
