@@ -53,6 +53,4 @@ convention = "google"
 typeCheckingMode = "all"
 include = ["app", "tests", "scripts"]
 exclude = ["notebooks"]
-venvPath = "."
-venv = ".venv"
 executionEnvironments = [{ root = ".", extraPaths = ["."] }]
