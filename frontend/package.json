@@ -17,7 +17,7 @@
     "@mantine/core": "^9.1.1",
     "@mantine/form": "^9.1.1",
     "@mantine/hooks": "^9.1.1",
-    "@tabler/icons-react": "^3.42.0",
+    "@tabler/icons-react": "^3.44.0",
     "@tanstack/query-async-storage-persister": "^5.100.9",
     "@tanstack/react-query": "^5.100.9",
     "@tanstack/react-query-persist-client": "^5.100.9",
@@ -25,8 +25,8 @@
     "@turf/helpers": "^7.3.5",
     "axios": "^1.16.0",
     "leaflet": "^1.9.4",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "react-leaflet": "^5.0.0",
     "recharts": "^3.8.1"
   },
@@ -40,7 +40,7 @@
     "@types/babel__core": "^7.20.5",
     "@types/geojson": "^7946.0.16",
     "@types/leaflet": "^1.9.21",
-    "@types/node": "^24.12.2",
+    "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -58,9 +58,9 @@
     "prettier": "3.8.3",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.11"
   },
-  "packageManager": "pnpm@10.33.4+sha512.1c67b3b359b2d408119ba1ed289f34b8fc3c6873412bec6fd264fbdc82489e510fcbecb9ce9d22dae7f3b76269d8441046014bdca53b9979cd7a561ad631b800",
+  "packageManager": "pnpm@11.0.9+sha512.34ce82e6780233cf9cad8685029a8f81d2e06196c5a9bad98879f7424940c6817c4e4524fb7d38b8553ceed48b9758b8ebaf1abd3600c232c4c8cf7366086f38",
   "engines": {
     "node": ">=24 <25"
   }
