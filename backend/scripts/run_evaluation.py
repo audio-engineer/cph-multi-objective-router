@@ -9,7 +9,7 @@ folder, for example:
 
 The script loads the same graph state as the FastAPI app, samples
 origin-destination pairs from graph nodes, runs shortest, weighted, and Pareto
-routing, and writes CSV files to evaluation-output/.
+routing, and writes CSV files to evaluation/.
 
 The script intentionally calls the route-planning layer directly instead of the
 HTTP endpoint. This measures server-side routing and serialization without
@@ -24,7 +24,6 @@ import hashlib
 import json
 import random
 import statistics
-import sys
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -35,25 +34,20 @@ from unittest.mock import patch
 
 import networkx as nx
 
-# Make `app` importable when the script is placed in backend/scripts.
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from app import route_planner as route_planner_module  # noqa: E402
-from app.costs import (  # noqa: E402
+from app import route_planner as route_planner_module
+from app.costs import (
     build_weighted_edge_cost_function,
     compute_edge_cost_components,
     normalize_route_preference_weights,
     select_parallel_edge_attributes,
 )
-from app.graph_state import (  # noqa: E402
+from app.graph_state import (
     GRAPH_STATE,
     get_graph_for_travel_mode,
     load_graph_state,
 )
-from app.main import OVERLAY_DIRECTORY, PLACE_NAME  # noqa: E402
-from app.models import (  # noqa: E402
+from app.main import OVERLAY_DIRECTORY, PLACE_NAME
+from app.models import (
     ParetoSearchLabel,
     RouteCoordinates,
     RouteFeatureCollection,
@@ -62,7 +56,7 @@ from app.models import (  # noqa: E402
     RoutePreferenceWeights,
     TravelMode,
 )
-from app.value_parsing import parse_float_or_default  # noqa: E402
+from app.value_parsing import parse_float_or_default
 
 if TYPE_CHECKING:
     from app.typing_aliases import EdgeAttributeMap, MultiDiGraphAny
@@ -151,6 +145,7 @@ def _parse_travel_mode(value: object) -> TravelMode:
         return cast("TravelMode", value)
 
     error_message = f"Unsupported travel mode: {value}"
+
     raise SystemExit(error_message)
 
 
@@ -159,6 +154,7 @@ def _parse_pair_filter(value: object) -> _PairFilter:
         return cast("_PairFilter", value)
 
     error_message = f"Unsupported pair filter: {value}"
+
     raise SystemExit(error_message)
 
 
@@ -177,6 +173,7 @@ def _parse_int(value: object) -> int:
         return int(value)
 
     error_message = f"Expected integer argument, got {value!r}."
+
     raise SystemExit(error_message)
 
 
@@ -185,6 +182,7 @@ def _parse_float(value: object) -> float:
         return float(value)
 
     error_message = f"Expected numeric argument, got {value!r}."
+
     raise SystemExit(error_message)
 
 
@@ -213,7 +211,7 @@ def _parse_args() -> _RunEvaluationArgs:
     _ = parser.add_argument("--pareto-max-routes", type=int, default=3)
     _ = parser.add_argument("--pareto-max-labels-per-node", type=int, default=40)
     _ = parser.add_argument("--pareto-max-total-labels", type=int, default=50_000)
-    _ = parser.add_argument("--out", type=Path, default=Path("evaluation-output"))
+    _ = parser.add_argument("--out", type=Path, default=Path("evaluation"))
     _ = parser.add_argument(
         "--profiles",
         default=",".join(profile.name for profile in WEIGHT_PROFILES),
@@ -245,6 +243,7 @@ def _load_profiles(profile_arg: str) -> list[_WeightProfile]:
 
     if not profiles:
         error_message = "No valid weight profiles selected."
+
         raise SystemExit(error_message)
 
     return profiles
@@ -376,6 +375,7 @@ def _sample_pairs(
             break
 
         origin_node, destination_node = rng.sample(nodes, 2)
+
         if (origin_node, destination_node) in seen:
             continue
 
@@ -393,6 +393,7 @@ def _sample_pairs(
             continue
 
         distance, snow_penalty, uphill_penalty, scenic_penalty = cost_vector
+
         if not (options.min_distance <= distance <= options.max_distance):
             continue
 
@@ -443,6 +444,7 @@ def _sample_pairs(
             "--max-sampling-attempts, lowering --pairs, or using --pair-filter random."
         )
         error_message = f"{sampled} {advice} {command_hint}"
+
         raise SystemExit(error_message)
 
     return pairs
@@ -579,6 +581,7 @@ def _run_one_request(
     }
 
     route_rows: list[_CsvRow] = []
+
     if response is not None:
         for feature in response.features:
             breakdown = feature.properties.penalty_breakdown
@@ -618,9 +621,11 @@ def _run_one_request(
 def _write_csv(path: Path, rows: Sequence[_CsvRow]) -> None:
     if not rows:
         error_message = f"No rows to write for {path}"
+
         raise SystemExit(error_message)
 
     path.parent.mkdir(parents=True, exist_ok=True)
+
     with path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
@@ -700,8 +705,10 @@ def _main() -> None:
     route_rows: list[_CsvRow] = []
 
     requests: list[tuple[_Pair, RouteOptimizationMethod, _WeightProfile]] = []
+
     for pair in pairs:
         requests.append((pair, "shortest", WEIGHT_PROFILES[0]))
+
         for profile in profiles:
             requests.append((pair, "weighted", profile))
             requests.append((pair, "pareto", profile))
@@ -716,7 +723,9 @@ def _main() -> None:
                 f"profile={profile.name}",
             )
         )
+
         print(progress, flush=True)
+
         run_row, rows_for_request = _run_one_request(
             pair,
             method,
@@ -727,8 +736,14 @@ def _main() -> None:
         route_rows.extend(rows_for_request)
 
     args.out.mkdir(parents=True, exist_ok=True)
+
+    file_suffix = (
+        f"{args.pairs}p-{args.travel_mode}-{args.pair_filter}-"
+        f"{args.min_distance}-{args.max_distance}"
+    )
+
     _write_csv(
-        args.out / "pairs.csv",
+        args.out / f"pairs-{file_suffix}.csv",
         _pair_rows(
             pairs,
             pair_filter=args.pair_filter,
@@ -736,11 +751,13 @@ def _main() -> None:
             max_distance=args.max_distance,
         ),
     )
-    _write_csv(args.out / "runs.csv", run_rows)
-    _write_csv(args.out / "routes.csv", route_rows)
+    _write_csv(args.out / f"runs-{file_suffix}.csv", run_rows)
+    _write_csv(args.out / f"routes-{file_suffix}.csv", route_rows)
 
     failure_count = sum(1 for row in run_rows if row["success"] is False)
+
     print(f"Done. Wrote CSV files to {args.out}.")
+
     if failure_count:
         print(f"Warning: {failure_count} requests failed. Inspect runs.csv.")
 

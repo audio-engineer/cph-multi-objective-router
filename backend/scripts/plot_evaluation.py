@@ -91,15 +91,13 @@ def _parse_path(value: object) -> Path:
 
 def _parse_args() -> _PlotEvaluationArgs:
     parser = argparse.ArgumentParser()
-    _ = parser.add_argument("--input", type=Path, default=Path("evaluation-output"))
-    _ = parser.add_argument(
-        "--figures", type=Path, default=Path("evaluation-output/figures")
-    )
+    _ = parser.add_argument("--input", type=Path, default=Path("evaluation"))
+    _ = parser.add_argument("--output", type=Path, default=Path("evaluation"))
     values = cast("Mapping[str, object]", vars(parser.parse_args()))
 
     return _PlotEvaluationArgs(
         input=_parse_path(values["input"]),
-        figures=_parse_path(values["figures"]),
+        figures=_parse_path(values["output"]),
     )
 
 
@@ -158,6 +156,7 @@ def _write_csv(path: Path, rows: Sequence[_CsvRow]) -> None:
         return
 
     path.parent.mkdir(parents=True, exist_ok=True)
+
     with path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
@@ -180,6 +179,7 @@ def _add_quality_fields(routes: Sequence[_CsvInputRow]) -> list[_CsvOutputRow]:
 
     for row in routes:
         base = shortest.get(row["pair_id"])
+
         if base is None:
             continue
 
@@ -218,6 +218,7 @@ def _summarize_runs(runs: Sequence[_CsvInputRow]) -> list[_CsvOutputRow]:
             by_method[row["method"]].append(row)
 
     rows: list[_CsvOutputRow] = []
+
     for method, group in sorted(by_method.items()):
         runtimes = [_as_float(row, "runtime_ms") for row in group]
         route_counts = [_as_float(row, "route_count") for row in group]
@@ -267,13 +268,17 @@ def _summarize_quality(
     for row in enriched:
         method = _as_text(row, "method")
         profile = _as_text(row, "profile")
+
         if method == "shortest":
             continue
+
         if not include_neutral and profile == "neutral":
             continue
+
         by_method[method].append(row)
 
     rows: list[_CsvOutputRow] = []
+
     for method, group in sorted(by_method.items()):
         overhead = [_as_float(row, "distance_overhead_pct") for row in group]
         gain = [_as_float(row, "max_score_gain_pp") for row in group]
@@ -302,10 +307,12 @@ def _summarize_quality_by_profile(
     for row in enriched:
         method = _as_text(row, "method")
         profile = _as_text(row, "profile")
+
         if method != "shortest":
             by_group[(method, profile)].append(row)
 
     rows: list[_CsvOutputRow] = []
+
     for (method, profile), group in sorted(by_group.items()):
         overhead = [_as_float(row, "distance_overhead_pct") for row in group]
         gain = [_as_float(row, "max_score_gain_pp") for row in group]
@@ -331,14 +338,17 @@ def _summarize_sensitivity(routes: Sequence[_CsvInputRow]) -> list[_CsvOutputRow
     for row in routes:
         if row["method"] == "shortest" or row["route_index"] != "0":
             continue
+
         groups[(row["method"], row["pair_id"])][row["profile"]] = row["signature"]
 
     by_method: defaultdict[str, list[int]] = defaultdict(list)
     changed_from_neutral: defaultdict[str, list[int]] = defaultdict(list)
+
     for (method, _pair_id), signatures_by_profile in groups.items():
         signatures = set(signatures_by_profile.values())
         by_method[method].append(len(signatures))
         neutral = signatures_by_profile.get("neutral")
+
         if neutral is not None:
             changed = any(
                 signature != neutral
@@ -348,6 +358,7 @@ def _summarize_sensitivity(routes: Sequence[_CsvInputRow]) -> list[_CsvOutputRow
             changed_from_neutral[method].append(1 if changed else 0)
 
     rows: list[_CsvOutputRow] = []
+
     for method in sorted(by_method):
         unique_counts = by_method[method]
         changed_counts = changed_from_neutral[method]
@@ -378,6 +389,7 @@ def _plot_runtime(runs: Sequence[_CsvInputRow], output: Path) -> None:
         ]
         for method in methods
     ]
+
     _ = plt.figure(figsize=(3.35, 2.35))
     _ = plt.boxplot(data, tick_labels=methods, showfliers=False)
     _ = plt.ylabel("Runtime (ms, log scale)")
