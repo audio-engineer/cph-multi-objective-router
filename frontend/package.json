@@ -14,13 +14,13 @@
     "tsc:check": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@mantine/core": "^9.1.1",
-    "@mantine/form": "^9.1.1",
-    "@mantine/hooks": "^9.1.1",
+    "@mantine/core": "^9.2.0",
+    "@mantine/form": "^9.2.0",
+    "@mantine/hooks": "^9.2.0",
     "@tabler/icons-react": "^3.44.0",
-    "@tanstack/query-async-storage-persister": "^5.100.9",
-    "@tanstack/react-query": "^5.100.9",
-    "@tanstack/react-query-persist-client": "^5.100.9",
+    "@tanstack/query-async-storage-persister": "^5.100.10",
+    "@tanstack/react-query": "^5.100.10",
+    "@tanstack/react-query-persist-client": "^5.100.10",
     "@turf/boolean-point-in-polygon": "^7.3.5",
     "@turf/helpers": "^7.3.5",
     "axios": "^1.16.0",
@@ -35,12 +35,12 @@
     "@eslint/js": "^9.39.4",
     "@hey-api/openapi-ts": "0.97.1",
     "@rolldown/plugin-babel": "^0.2.3",
-    "@tanstack/eslint-plugin-query": "^5.100.9",
-    "@tanstack/react-query-devtools": "^5.100.9",
+    "@tanstack/eslint-plugin-query": "^5.100.10",
+    "@tanstack/react-query-devtools": "^5.100.10",
     "@types/babel__core": "^7.20.5",
     "@types/geojson": "^7946.0.16",
     "@types/leaflet": "^1.9.21",
-    "@types/node": "^24.12.3",
+    "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -57,10 +57,10 @@
     "postcss-simple-vars": "^7.0.1",
     "prettier": "3.8.3",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.11"
+    "typescript-eslint": "^8.59.3",
+    "vite": "^8.0.12"
   },
-  "packageManager": "pnpm@11.0.9+sha512.34ce82e6780233cf9cad8685029a8f81d2e06196c5a9bad98879f7424940c6817c4e4524fb7d38b8553ceed48b9758b8ebaf1abd3600c232c4c8cf7366086f38",
+  "packageManager": "pnpm@11.1.1+sha512.d1fdf5f73c617b64fa1a56a81c3c8dfe0e966e33a6010aa256b517ae77be21d93e05affc0de1a83b0e4f29d569f68b446ae8f068cd7247c0bb3df0fb4d7bdf9a",
   "engines": {
     "node": ">=24 <25"
   }
