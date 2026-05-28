@@ -1,12 +1,4 @@
-"""Generate evaluation summary tables and figures from CSV output.
-
-Run from the backend folder after run_evaluation.py:
-
-    uv run python scripts/plot_evaluation.py --input evaluation-output \
-        --figures ../paper/figures
-
-The script writes summary CSV files and vector PDF figures.
-"""
+"""Generate evaluation summary tables and figures from CSV output."""
 
 # ruff: noqa: T201
 
