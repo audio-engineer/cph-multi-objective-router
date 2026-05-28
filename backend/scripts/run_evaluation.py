@@ -1,20 +1,4 @@
-"""Run routing evaluation experiments and export CSV data.
-
-Place this file in backend/scripts/run_evaluation.py and run it from the backend
-folder, for example:
-
-    uv run python scripts/run_evaluation.py --pairs 20 --seed 7 \
-        --travel-mode cycling --min-distance 2000 --max-distance 8000 \
-        --pair-filter active
-
-The script loads the same graph state as the FastAPI app, samples
-origin-destination pairs from graph nodes, runs shortest, weighted, and Pareto
-routing, and writes CSV files to evaluation/.
-
-The script intentionally calls the route-planning layer directly instead of the
-HTTP endpoint. This measures server-side routing and serialization without
-browser caching, geocoding, or front-end rendering noise.
-"""
+"""Run routing evaluation experiments and export CSV data."""
 
 # ruff: noqa: T201
 
